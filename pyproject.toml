@@ -35,9 +35,12 @@ backend = [
     "celery>=5.4",
     "redis>=5.0",
     "sqlalchemy[asyncio]>=2.0",
-    "psycopg[binary,pool]>=3.2",
-    "timescaledb-toolkit",
-    "pgvector"
+    "asyncpg>=0.29",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.13",
+    "pgvector>=0.2",
+    "python-jose[cryptography]>=3.3",
+    "slowapi>=0.1"
 ]
 test = [
     "pytest>=8.3",
