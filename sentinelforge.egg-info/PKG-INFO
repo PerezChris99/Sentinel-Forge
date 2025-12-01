@@ -1,0 +1,48 @@
+Metadata-Version: 2.4
+Name: sentinelforge
+Version: 0.1.0
+Summary: SentinelForge CCTV intelligence platform
+Author: SentinelForge Team
+Requires-Python: >=3.11
+Requires-Dist: dash>=2.15
+Requires-Dist: plotly>=5.22
+Requires-Dist: dash-bootstrap-components>=1.5
+Requires-Dist: python-socketio[client]>=5.11
+Requires-Dist: requests>=2.32
+Requires-Dist: pydantic>=2.8
+Requires-Dist: tenacity>=8.2
+Requires-Dist: pyjwt[crypto]>=2.8
+Requires-Dist: cryptography>=42.0
+Requires-Dist: pandas>=2.1
+Requires-Dist: numpy>=1.26
+Provides-Extra: cv
+Requires-Dist: opencv-python>=4.10; extra == "cv"
+Requires-Dist: dlib>=19.24; extra == "cv"
+Requires-Dist: face-recognition>=1.3; extra == "cv"
+Requires-Dist: scikit-learn>=1.4; extra == "cv"
+Provides-Extra: backend
+Requires-Dist: fastapi>=0.112; extra == "backend"
+Requires-Dist: uvicorn[standard]>=0.30; extra == "backend"
+Requires-Dist: celery>=5.4; extra == "backend"
+Requires-Dist: redis>=5.0; extra == "backend"
+Requires-Dist: sqlalchemy[asyncio]>=2.0; extra == "backend"
+Requires-Dist: asyncpg>=0.29; extra == "backend"
+Requires-Dist: psycopg2-binary>=2.9; extra == "backend"
+Requires-Dist: alembic>=1.13; extra == "backend"
+Requires-Dist: pgvector>=0.2; extra == "backend"
+Requires-Dist: python-jose[cryptography]>=3.3; extra == "backend"
+Requires-Dist: slowapi>=0.1; extra == "backend"
+Requires-Dist: python-socketio[asyncio]>=5.11; extra == "backend"
+Requires-Dist: passlib[bcrypt]>=1.7; extra == "backend"
+Requires-Dist: python-multipart>=0.0.6; extra == "backend"
+Requires-Dist: aiofiles>=23.2; extra == "backend"
+Requires-Dist: reportlab>=4.0; extra == "backend"
+Provides-Extra: analytics
+Requires-Dist: scikit-learn>=1.3.0; extra == "analytics"
+Requires-Dist: pandas>=2.0.0; extra == "analytics"
+Requires-Dist: numpy>=1.24.0; extra == "analytics"
+Requires-Dist: joblib>=1.3.0; extra == "analytics"
+Provides-Extra: test
+Requires-Dist: pytest>=8.3; extra == "test"
+Requires-Dist: pytest-asyncio>=0.23; extra == "test"
+Requires-Dist: dash[testing]>=2.15; extra == "test"

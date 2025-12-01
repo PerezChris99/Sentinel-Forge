@@ -76,7 +76,7 @@ class Sighting(Base):
     embedding = Column(Vector(128))  # Encrypted in application layer
     face_image_b64 = Column(Text)
     flag_level = Column(Integer, default=0, nullable=False)  # 0=normal, 1=repeat, 2=high_risk, 3=critical
-    metadata = Column(JSON)  # pose, lighting, etc.
+    extra_metadata = Column(JSON)  # pose, lighting, etc.
 
     # Relationships
     person = relationship("Person", back_populates="sightings")
@@ -123,7 +123,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime)
-    metadata = Column(JSON)
+    extra_metadata = Column(JSON)
 
     # Relationships
     audit_logs = relationship("AuditLog", back_populates="user")
@@ -143,7 +143,7 @@ class Camera(Base):
     is_enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_seen = Column(DateTime)
-    metadata = Column(JSON)  # Resolution, FPS, coverage area
+    extra_metadata = Column(JSON)  # Resolution, FPS, coverage area
     
     # Relationships
     incidents = relationship("Incident", back_populates="camera")
@@ -163,7 +163,7 @@ class Alert(Base):
     assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     resolved_at = Column(DateTime)
     notes = Column(Text)
-    metadata = Column(JSON)
+    extra_metadata = Column(JSON)
 
     # Relationships
     sighting = relationship("Sighting")
@@ -181,10 +181,10 @@ class Incident(Base):
     status = Column(SQLEnum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False)
     severity = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
     assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     resolved_at = Column(DateTime)
-    metadata = Column(JSON)
+    extra_metadata = Column(JSON)
 
     # Relationships
     person = relationship("Person", back_populates="incidents")
@@ -202,7 +202,7 @@ class IncidentEvent(Base):
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
-    metadata = Column(JSON)
+    extra_metadata = Column(JSON)
 
     # Relationships
     incident = relationship("Incident", back_populates="incident_events")

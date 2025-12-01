@@ -63,10 +63,9 @@ def decode_token(token: str) -> dict:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = None
-) -> User:
-    """Get current authenticated user"""
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Get current authenticated user (without DB dependency)"""
     token = credentials.credentials
     payload = decode_token(token)
     
@@ -77,29 +76,18 @@ async def get_current_user(
             detail="Could not validate credentials"
         )
     
-    # Fetch user from database
-    if db:
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        
-        if user is None or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive"
-            )
-        
-        return user
-    
-    # Return minimal user dict if no DB session
-    return {"id": user_id, "username": payload.get("username")}
+    # Return user data from token
+    return {
+        "id": user_id,
+        "username": payload.get("username"),
+        "role": payload.get("role", "viewer")
+    }
 
 
 def require_role(required_role: UserRole):
     """Dependency to check user role"""
-    async def role_checker(user: User = Depends(get_current_user)) -> User:
-        user_role_value = UserRole.ADMIN.value if user.role == UserRole.ADMIN else (
-            UserRole.OPERATOR.value if user.role == UserRole.OPERATOR else UserRole.VIEWER.value
-        )
+    async def role_checker(user: dict = Depends(get_current_user)) -> dict:
+        user_role_value = user.get("role", "viewer")
         required_role_value = required_role.value
         
         # Admin > Operator > Viewer
