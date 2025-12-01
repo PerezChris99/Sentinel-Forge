@@ -40,7 +40,12 @@ backend = [
     "alembic>=1.13",
     "pgvector>=0.2",
     "python-jose[cryptography]>=3.3",
-    "slowapi>=0.1"
+    "slowapi>=0.1",
+    "python-socketio[asyncio]>=5.11",
+    "passlib[bcrypt]>=1.7",
+    "python-multipart>=0.0.6",
+    "aiofiles>=23.2",
+    "reportlab>=4.0"
 ]
 analytics = [
     "scikit-learn>=1.3.0",

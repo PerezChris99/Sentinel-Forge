@@ -6,13 +6,42 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
+import enum
 
 Base = declarative_base()
+
+
+# Enums
+class UserRole(enum.Enum):
+    ADMIN = "admin"
+    OPERATOR = "operator"
+    VIEWER = "viewer"
+
+
+class CameraStatus(enum.Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    ERROR = "error"
+    DISABLED = "disabled"
+
+
+class IncidentStatus(enum.Enum):
+    OPEN = "open"
+    INVESTIGATING = "investigating"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+
+class AlertStatus(enum.Enum):
+    NEW = "new"
+    ACKNOWLEDGED = "acknowledged"
+    DISMISSED = "dismissed"
+    ESCALATED = "escalated"
 
 
 class Person(Base):
@@ -26,10 +55,14 @@ class Person(Base):
     known_status = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     consent_given = Column(Boolean, default=False, nullable=False)
+    notes = Column(Text)  # Additional notes
+    photo_urls = Column(JSON)  # Array of photo URLs
+    is_archived = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     sightings = relationship("Sighting", back_populates="person")
     patterns = relationship("Pattern", back_populates="person")
+    incidents = relationship("Incident", back_populates="person")
 
 
 class Sighting(Base):
@@ -76,3 +109,130 @@ class FootageRef(Base):
 
     # Relationships
     sighting = relationship("Sighting", back_populates="footage_refs")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.VIEWER, nullable=False)
+    full_name = Column(String(255))
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login = Column(DateTime)
+    metadata = Column(JSON)
+
+    # Relationships
+    audit_logs = relationship("AuditLog", back_populates="user")
+    alerts = relationship("Alert", back_populates="assigned_to_user")
+
+
+class Camera(Base):
+    __tablename__ = "cameras"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False)
+    camera_id = Column(String(100), unique=True, nullable=False, index=True)
+    stream_url = Column(String(500), nullable=False)  # IP Webcam URL
+    location = Column(String(255))
+    zone = Column(String(100))
+    status = Column(SQLEnum(CameraStatus), default=CameraStatus.OFFLINE, nullable=False)
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen = Column(DateTime)
+    metadata = Column(JSON)  # Resolution, FPS, coverage area
+    
+    # Relationships
+    incidents = relationship("Incident", back_populates="camera")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="CASCADE"))
+    alert_type = Column(String(50), nullable=False)  # unknown, repeat_offender, anomaly
+    severity = Column(Integer, default=1, nullable=False)  # 1=low, 2=medium, 3=high, 4=critical
+    status = Column(SQLEnum(AlertStatus), default=AlertStatus.NEW, nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    acknowledged_at = Column(DateTime)
+    assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    resolved_at = Column(DateTime)
+    notes = Column(Text)
+    metadata = Column(JSON)
+
+    # Relationships
+    sighting = relationship("Sighting")
+    assigned_to_user = relationship("User", back_populates="alerts")
+
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    person_id = Column(PGUUID(as_uuid=True), ForeignKey("persons.id", ondelete="SET NULL"))
+    camera_id = Column(PGUUID(as_uuid=True), ForeignKey("cameras.id", ondelete="SET NULL"))
+    status = Column(SQLEnum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False)
+    severity = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    resolved_at = Column(DateTime)
+    metadata = Column(JSON)
+
+    # Relationships
+    person = relationship("Person", back_populates="incidents")
+    camera = relationship("Camera", back_populates="incidents")
+    incident_events = relationship("IncidentEvent", back_populates="incident")
+
+
+class IncidentEvent(Base):
+    __tablename__ = "incident_events"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    incident_id = Column(PGUUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="SET NULL"))
+    event_type = Column(String(50), nullable=False)  # sighting, note, status_change
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    metadata = Column(JSON)
+
+    # Relationships
+    incident = relationship("Incident", back_populates="incident_events")
+    sighting = relationship("Sighting")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    action = Column(String(100), nullable=False)  # login, view_person, delete_sighting
+    resource_type = Column(String(50))  # person, sighting, incident
+    resource_id = Column(String(255))
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    ip_address = Column(String(45))
+    user_agent = Column(String(500))
+    details = Column(JSON)
+
+    # Relationships
+    user = relationship("User", back_populates="audit_logs")
+
+
+class SearchQuery(Base):
+    __tablename__ = "search_queries"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    query_text = Column(Text, nullable=False)
+    filters = Column(JSON)
+    result_count = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    execution_time_ms = Column(Float)

@@ -92,11 +92,20 @@ function loadTabData(tabName) {
         case 'overview':
             loadOverview();
             break;
+        case 'cameras':
+            loadCameras();
+            break;
         case 'persons':
             loadPersons();
             break;
         case 'unknowns':
             loadUnknowns();
+            break;
+        case 'alerts':
+            loadAlerts();
+            break;
+        case 'incidents':
+            loadIncidents();
             break;
         case 'reports':
             setDefaultDateRange();
@@ -421,14 +430,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load initial data
     loadOverview();
     
+    // Initialize WebSocket
+    initWebSocket();
+    
     // Start auto-refresh
     startAutoRefresh();
     
-    // Set up filter change handler
-    document.getElementById('person-filter').addEventListener('change', loadPersons);
+    // Set up filter change handlers
+    document.getElementById('person-filter')?.addEventListener('change', loadPersons);
+    document.getElementById('alert-severity-filter')?.addEventListener('change', loadAlerts);
+    document.getElementById('alert-status-filter')?.addEventListener('change', loadAlerts);
     
     // Cleanup on page unload
-    window.addEventListener('beforeunload', stopAutoRefresh);
+    window.addEventListener('beforeunload', () => {
+        stopAutoRefresh();
+        if (socket) socket.disconnect();
+    });
 });
 
 // Mock Data Fallback (for development without backend)
@@ -463,3 +480,304 @@ API.get = async function(endpoint) {
     return originalGet.call(this, endpoint);
 };
 */
+
+// WebSocket Connection
+let socket = null;
+
+function initWebSocket() {
+    socket = io(API_BASE_URL, {
+        path: '/ws/socket.io',
+        transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+        console.log('WebSocket connected');
+        socket.emit('subscribe', { rooms: ['alerts', 'sightings'] });
+    });
+
+    socket.on('new_alert', (alert) => {
+        console.log('New alert received:', alert);
+        showToast(`New Alert: ${alert.message}`, 'warning');
+        loadAlerts(); // Refresh alerts table
+    });
+
+    socket.on('new_sighting', (sighting) => {
+        console.log('New sighting:', sighting);
+        updateRecentSightings(); // Refresh sightings
+    });
+
+    socket.on('camera_status', (status) => {
+        console.log('Camera status update:', status);
+        updateCameraStatus(status);
+    });
+
+    socket.on('disconnect', () => {
+        console.log('WebSocket disconnected');
+    });
+}
+
+// Camera Management
+async function loadCameras() {
+    const grid = document.getElementById('cameras-grid');
+    const cameras = await API.get('/api/cameras');
+
+    if (!cameras || cameras.length === 0) {
+        grid.innerHTML = '<div class="text-center p-4">No cameras configured. Click "Add Camera" to get started.</div>';
+        return;
+    }
+
+    grid.innerHTML = cameras.map(camera => `
+        <div class="card">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h4>${camera.name}</h4>
+                <span class="badge ${camera.status === 'ONLINE' ? 'bg-success' : 'bg-secondary'}">
+                    ${camera.status}
+                </span>
+            </div>
+            <p class="text-muted mb-2">${camera.camera_id}</p>
+            <p class="small mb-2">
+                <strong>Location:</strong> ${camera.location || 'N/A'}<br>
+                <strong>Zone:</strong> ${camera.zone || 'N/A'}
+            </p>
+            <div class="btn-group btn-group-sm w-100">
+                <button class="btn btn-outline-primary" onclick="viewCameraStream('${camera.camera_id}', '${camera.stream_url}', '${camera.name}', '${camera.location}')">
+                    View Stream
+                </button>
+                <button class="btn btn-outline-secondary" onclick="editCamera('${camera.camera_id}')">
+                    Edit
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showAddCameraModal() {
+    const modal = new bootstrap.Modal(document.getElementById('addCameraModal'));
+    document.getElementById('addCameraForm').reset();
+    modal.show();
+}
+
+async function saveCamera() {
+    const form = document.getElementById('addCameraForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const cameraData = {
+        name: document.getElementById('cameraName').value,
+        camera_id: document.getElementById('cameraId').value,
+        stream_url: document.getElementById('streamUrl').value,
+        location: document.getElementById('cameraLocation').value,
+        zone: document.getElementById('cameraZone').value,
+        metadata: {}
+    };
+
+    const result = await API.post('/api/cameras', cameraData);
+    
+    if (result) {
+        showToast('Camera added successfully!', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('addCameraModal')).hide();
+        loadCameras();
+    } else {
+        showToast('Failed to add camera', 'error');
+    }
+}
+
+function viewCameraStream(cameraId, streamUrl, name, location) {
+    const modal = new bootstrap.Modal(document.getElementById('viewCameraModal'));
+    document.getElementById('viewCameraTitle').textContent = name;
+    document.getElementById('cameraStreamLocation').textContent = location || 'N/A';
+    
+    // Set stream URL
+    const img = document.getElementById('cameraStreamImg');
+    img.src = streamUrl;
+    img.onerror = () => {
+        img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect fill="%23ddd" width="640" height="480"/><text x="50%" y="50%" text-anchor="middle" fill="%23666">Stream Unavailable</text></svg>';
+        document.getElementById('cameraStreamStatus').textContent = 'Offline';
+    };
+    img.onload = () => {
+        document.getElementById('cameraStreamStatus').textContent = 'Online';
+    };
+    
+    modal.show();
+}
+
+function updateCameraStatus(status) {
+    // Update camera card if on cameras tab
+    const grid = document.getElementById('cameras-grid');
+    if (grid) {
+        loadCameras(); // Refresh to show updated status
+    }
+}
+
+// Alert Management
+async function loadAlerts() {
+    const tbody = document.getElementById('alerts-table-body');
+    const severity = document.getElementById('alert-severity-filter')?.value;
+    const status = document.getElementById('alert-status-filter')?.value;
+    
+    let url = '/api/alerts?limit=100';
+    if (severity) url += `&severity=${severity}`;
+    if (status) url += `&status=${status}`;
+    
+    const alerts = await API.get(url);
+    
+    if (!alerts || alerts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No alerts found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = alerts.map(alert => `
+        <tr>
+            <td>${formatTimestamp(alert.created_at)}</td>
+            <td>${alert.alert_type}</td>
+            <td><span class="badge ${getSeverityBadge(alert.severity)}">${alert.severity}</span></td>
+            <td>${alert.message}</td>
+            <td><span class="badge ${getStatusBadge(alert.status)}">${alert.status}</span></td>
+            <td>
+                ${alert.status === 'NEW' ? `
+                    <button class="btn btn-sm btn-success" onclick="acknowledgeAlert('${alert.id}')">Acknowledge</button>
+                    <button class="btn btn-sm btn-warning" onclick="dismissAlert('${alert.id}')">Dismiss</button>
+                ` : '—'}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function acknowledgeAlert(alertId) {
+    const result = await API.post(`/api/alerts/${alertId}/acknowledge`, {});
+    if (result) {
+        showToast('Alert acknowledged', 'success');
+        loadAlerts();
+    }
+}
+
+async function dismissAlert(alertId) {
+    const result = await API.post(`/api/alerts/${alertId}/dismiss`, {});
+    if (result) {
+        showToast('Alert dismissed', 'success');
+        loadAlerts();
+    }
+}
+
+function getSeverityBadge(severity) {
+    const badges = {
+        1: 'bg-info',
+        2: 'bg-warning',
+        3: 'bg-danger',
+        4: 'bg-dark'
+    };
+    return badges[severity] || 'bg-secondary';
+}
+
+function getStatusBadge(status) {
+    const badges = {
+        'NEW': 'bg-danger',
+        'ACKNOWLEDGED': 'bg-warning',
+        'DISMISSED': 'bg-secondary',
+        'ESCALATED': 'bg-dark'
+    };
+    return badges[status] || 'bg-secondary';
+}
+
+// Incident Management
+async function loadIncidents() {
+    const tbody = document.getElementById('incidents-table-body');
+    const incidents = await API.get('/api/incidents?limit=50');
+    
+    if (!incidents || incidents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No incidents found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = incidents.map(incident => `
+        <tr>
+            <td>${incident.id.substring(0, 8)}...</td>
+            <td>${incident.title}</td>
+            <td><span class="badge ${getIncidentStatusBadge(incident.status)}">${incident.status}</span></td>
+            <td><span class="badge ${getSeverityBadge(incident.severity)}">${incident.severity}</span></td>
+            <td>${formatTimestamp(incident.created_at)}</td>
+            <td>${incident.assigned_to ? incident.assigned_to.substring(0, 8) + '...' : 'Unassigned'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" onclick="viewIncident('${incident.id}')">View</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function getIncidentStatusBadge(status) {
+    const badges = {
+        'OPEN': 'bg-danger',
+        'INVESTIGATING': 'bg-warning',
+        'RESOLVED': 'bg-success',
+        'CLOSED': 'bg-secondary'
+    };
+    return badges[status] || 'bg-secondary';
+}
+
+function showCreateIncidentModal() {
+    const modal = new bootstrap.Modal(document.getElementById('createIncidentModal'));
+    document.getElementById('createIncidentForm').reset();
+    modal.show();
+}
+
+async function createIncident() {
+    const form = document.getElementById('createIncidentForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const incidentData = {
+        title: document.getElementById('incidentTitle').value,
+        description: document.getElementById('incidentDescription').value,
+        severity: parseInt(document.getElementById('incidentSeverity').value)
+    };
+
+    const result = await API.post('/api/incidents', incidentData);
+    
+    if (result) {
+        showToast('Incident created successfully!', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('createIncidentModal')).hide();
+        loadIncidents();
+    } else {
+        showToast('Failed to create incident', 'error');
+    }
+}
+
+async function viewIncident(incidentId) {
+    // Fetch incident details and show in a modal or navigate to detail view
+    const incident = await API.get(`/api/incidents/${incidentId}`);
+    if (incident) {
+        // For now, just log it - you can create a detail modal later
+        console.log('Incident details:', incident);
+        alert(`Incident: ${incident.title}\nStatus: ${incident.status}\nEvents: ${incident.events.length}`);
+    }
+}
+
+// Toast Notifications
+function showToast(message, type = 'info') {
+    // Simple toast implementation
+    const toastContainer = document.createElement('div');
+    toastContainer.className = `toast-notification toast-${type}`;
+    toastContainer.textContent = message;
+    toastContainer.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : type === 'warning' ? '#ffc107' : '#17a2b8'};
+        color: white;
+        border-radius: 8px;
+        z-index: 9999;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    document.body.appendChild(toastContainer);
+    
+    setTimeout(() => {
+        toastContainer.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => toastContainer.remove(), 300);
+    }, 3000);
+}
