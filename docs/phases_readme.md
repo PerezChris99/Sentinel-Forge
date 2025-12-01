@@ -44,12 +44,12 @@ This README tracks the seven sequential phases required to deliver the full Sent
 
 ## Phase 5 – Dashboard (Frontend UI)
 **Status**: `[✅ Completed]`
-- **Objectives**: Dash UI for live monitoring, timelines, unknown galleries, reports (current focus).
-- **Deliverables**: `dashboard/app.py`, services (`api_client`, `socket_client`, `config`), CSS assets, tests.
-- **Steps**: Implement Overview/Persons/Unknowns/Reports tabs; integrate Socket.IO; add KPI cards and heatmaps; build export buttons; enforce JWT usage; add role-aware toggles.
-- **Dependencies**: Dash, Plotly, dash-bootstrap-components, python-socketio client.
-- **Testing/Validation**: `dash.testing` callback tests; WebSocket mock harness; manual UX review (<2s load target).
-- **Pitfalls & Fixes**: WebSocket disconnects → auto-reconnect; large galleries → pagination; RBAC compliance → hide unknown thumbnails by default.
+- **Objectives**: Minimalist HTML/CSS/JavaScript dashboard with Bootstrap and paper theme for live monitoring, timelines, unknown galleries, and reports.
+- **Deliverables**: `dashboard/index.html`, `assets/custom.css` (paper theme), `assets/app.js` (vanilla JS), comprehensive API endpoints in FastAPI backend, README.
+- **Steps**: Replaced Dash with vanilla HTML/CSS/JS; implemented Bootstrap-based grid layout; created paper theme with white/black minimalist aesthetic; built Overview/Persons/Unknowns/Reports tabs; integrated Chart.js for visualizations; added auto-refresh (5s interval); connected to FastAPI REST endpoints.
+- **Dependencies**: Bootstrap 5.3, Chart.js 4.4, Inter font, vanilla JavaScript ES6+, FastAPI backend endpoints.
+- **Testing/Validation**: Manual browser testing; API endpoint validation; responsive design check; auto-refresh verification.
+- **Pitfalls & Fixes**: Initial Dash implementation replaced per user requirement; CSS file conflict resolved with replace_string_in_file; CORS enabled in FastAPI; comprehensive dashboard API endpoints added to main.py.
 
 ## Phase 6 – Deployment, Testing & Monitoring
 **Status**: `[📅 Pending]`
