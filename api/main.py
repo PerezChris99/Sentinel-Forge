@@ -6,12 +6,14 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
+from pathlib import Path
 
 import redis.asyncio as redis
 from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -77,9 +79,16 @@ class ALFIEQuery(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis_client
-    redis_client = await redis.from_url(REDIS_URL, decode_responses=True)
+    try:
+        redis_client = await redis.from_url(REDIS_URL, decode_responses=True)
+        print(f"✓ Connected to Redis at {REDIS_URL}")
+    except Exception as e:
+        print(f"⚠ Redis connection failed: {e}")
+        print("  Continuing without Redis - caching will be disabled")
+        redis_client = None
     yield
-    await redis_client.close()
+    if redis_client:
+        await redis_client.close()
 
 
 # FastAPI app
@@ -126,6 +135,15 @@ from api.extended import router as extended_router
 import api.extended as extended_module
 extended_module.get_db = get_db  # Inject DB dependency
 app.include_router(extended_router, prefix="/api")
+
+# Mount Dashboard
+BASE_DIR = Path(__file__).resolve().parent.parent
+DASHBOARD_DIR = BASE_DIR / "dashboard"
+if DASHBOARD_DIR.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(DASHBOARD_DIR), html=True), name="dashboard")
+    print(f"✓ Dashboard mounted at /dashboard from {DASHBOARD_DIR}")
+else:
+    print(f"⚠ Dashboard directory not found at {DASHBOARD_DIR}")
 
 # Attach WebSocket
 attach_socketio(app)

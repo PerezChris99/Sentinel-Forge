@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,
 from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-import face_recognition
+# import face_recognition  # Optional - only needed for photo upload
 import numpy as np
 
 from db.models import (
@@ -143,14 +143,14 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends()):
 
 
 @router.get("/auth/me", tags=["Authentication"])
-async def get_me(user: User = Depends(get_current_user)):
+async def get_me(user: dict = Depends(get_current_user)):
     """Get current user info"""
     return {
-        "id": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "role": user.role.value,
-        "full_name": user.full_name
+        "id": user["id"],
+        "username": user.get("username", ""),
+        "email": user.get("email", ""),
+        "role": user.get("role", "viewer"),
+        "full_name": user.get("full_name", "")
     }
 
 
@@ -162,7 +162,7 @@ class CameraCreate(BaseModel):
     stream_url: str  # IP Webcam URL
     location: Optional[str] = None
     zone: Optional[str] = None
-    metadata: Optional[dict] = {}
+    extra_metadata: Optional[dict] = {}
 
 
 class CameraUpdate(BaseModel):
@@ -171,7 +171,7 @@ class CameraUpdate(BaseModel):
     location: Optional[str] = None
     zone: Optional[str] = None
     is_enabled: Optional[bool] = None
-    metadata: Optional[dict] = None
+    extra_metadata: Optional[dict] = None
 
 
 @router.post("/cameras", tags=["Cameras"])
@@ -198,7 +198,7 @@ async def create_camera(
         status=CameraStatus.OFFLINE,
         is_enabled=True,
         created_at=datetime.utcnow(),
-        metadata=camera_data.metadata
+        extra_metadata=camera_data.extra_metadata
     )
     
     db.add(camera)
@@ -266,7 +266,7 @@ async def get_camera(camera_id: str, db: AsyncSession = Depends()):
         "is_enabled": camera.is_enabled,
         "created_at": camera.created_at.isoformat(),
         "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
-        "metadata": camera.metadata
+        "extra_metadata": camera.extra_metadata
     }
 
 
@@ -295,8 +295,8 @@ async def update_camera(
         camera.zone = camera_data.zone
     if camera_data.is_enabled is not None:
         camera.is_enabled = camera_data.is_enabled
-    if camera_data.metadata is not None:
-        camera.metadata = camera_data.metadata
+    if camera_data.extra_metadata is not None:
+        camera.extra_metadata = camera_data.extra_metadata
     
     await db.commit()
     
@@ -489,58 +489,66 @@ async def upload_person_photo(
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Upload a photo for a person and extract face embedding"""
-    result = await db.execute(select(Person).where(Person.id == person_id))
-    person = result.scalar_one_or_none()
+    # NOTE: This endpoint requires face_recognition and OpenCV modules
+    # Install with: pip install face-recognition opencv-python
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Photo upload requires face_recognition module. Install with: pip install face-recognition opencv-python"
+    )
     
-    if not person:
-        raise HTTPException(status_code=404, detail="Person not found")
-    
-    # Read image
-    contents = await file.read()
-    
-    # Convert to numpy array
-    nparr = np.frombuffer(contents, np.uint8)
-    import cv2
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # Extract face embedding
-    face_locations = face_recognition.face_locations(rgb)
-    
-    if not face_locations:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No face detected in image"
-        )
-    
-    face_encodings = face_recognition.face_encodings(rgb, face_locations)
-    
-    if not face_encodings:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not extract face encoding"
-        )
-    
-    # Store photo as base64
-    photo_base64 = base64.b64encode(contents).decode('utf-8')
-    photo_url = f"data:image/jpeg;base64,{photo_base64}"
-    
-    # Update person
-    if not person.photo_urls:
-        person.photo_urls = []
-    person.photo_urls.append(photo_url)
-    
-    # Update or create face embedding
-    if person.face_embedding is None:
-        person.face_embedding = face_encodings[0].tolist()
-    
-    await db.commit()
-    
-    return {
-        "status": "uploaded",
-        "person_id": str(person_id),
-        "photo_count": len(person.photo_urls)
-    }
+    # Uncomment below when face_recognition is installed:
+    # result = await db.execute(select(Person).where(Person.id == person_id))
+    # person = result.scalar_one_or_none()
+    # 
+    # if not person:
+    #     raise HTTPException(status_code=404, detail="Person not found")
+    # 
+    # # Read image
+    # contents = await file.read()
+    # 
+    # # Convert to numpy array
+    # nparr = np.frombuffer(contents, np.uint8)
+    # import cv2
+    # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    # rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # 
+    # # Extract face embedding
+    # face_locations = face_recognition.face_locations(rgb)
+    # 
+    # if not face_locations:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="No face detected in image"
+    #     )
+    # 
+    # face_encodings = face_recognition.face_encodings(rgb, face_locations)
+    # 
+    # if not face_encodings:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Could not extract face encoding"
+    #     )
+    # 
+    # # Store photo as base64
+    # photo_base64 = base64.b64encode(contents).decode('utf-8')
+    # photo_url = f"data:image/jpeg;base64,{photo_base64}"
+    # 
+    # # Update person
+    # if not person.photo_urls:
+    #     person.photo_urls = []
+    # person.photo_urls.append(photo_url)
+    # 
+    # # Update or create face embedding
+    # if person.face_embedding is None:
+    #     person.face_embedding = face_encodings[0].tolist()
+    # 
+    # await db.commit()
+    # 
+    # return {
+    #     "status": "uploaded",
+    #     "person_id": str(person_id),
+    #     "photo_count": len(person.photo_urls)
+    # }
 
 
 @router.delete("/persons/{person_id}", tags=["Persons"])
