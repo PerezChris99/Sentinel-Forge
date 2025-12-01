@@ -150,14 +150,26 @@ async def log_sighting(
     embedding_json = str(event.embedding)
     encrypted_embedding = fernet.encrypt(embedding_json.encode()).decode()
     
-    # Check for repeat offender (simple Redis cache check)
-    cache_key = f"sightings:{event.person_id}:24h"
-    count = await redis_client.incr(cache_key)
-    await redis_client.expire(cache_key, 86400)  # 24 hours
-    
+    # Flag all unknown faces at all hours
     flag_level = event.flag_level
-    if count > 3 and event.person_id and event.person_id.startswith("unknown"):
-        flag_level = max(flag_level, 2)  # Escalate to high_risk
+    
+    # Unknown faces are always flagged
+    if event.person_id and event.person_id.startswith("unknown"):
+        flag_level = max(flag_level, 1)  # Flag as suspicious
+        
+        # Check for repeat offender (simple Redis cache check)
+        cache_key = f"sightings:{event.person_id}:24h"
+        count = await redis_client.incr(cache_key)
+        await redis_client.expire(cache_key, 86400)  # 24 hours
+        
+        # Escalate repeat unknowns
+        if count > 3:
+            flag_level = max(flag_level, 2)  # Escalate to high_risk
+    else:
+        # Known persons: check for repeat sightings
+        cache_key = f"sightings:{event.person_id}:24h"
+        count = await redis_client.incr(cache_key)
+        await redis_client.expire(cache_key, 86400)  # 24 hours
     
     # Create sighting record
     sighting = Sighting(
