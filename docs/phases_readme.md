@@ -2,7 +2,7 @@
 
 This README tracks the seven sequential phases required to deliver the full SentinelForge CCTV security platform. Each phase builds on the previous one so workstreams can run in parallel without rework.
 
-**Overall Progress**: `[██████░░░░] 57%` (4 of 7 phases completed)
+**Overall Progress**: `[████████░░] 71%` (5 of 7 phases completed)
 
 ---
 
@@ -34,13 +34,13 @@ This README tracks the seven sequential phases required to deliver the full Sent
 - **Pitfalls & Fixes**: Async session leaks → sessionmaker per request; pgvector search latency → IVFFlat index; webhook retries via Celery.
 
 ## Phase 4 – Analytics Engine (Pattern Detection)
-**Status**: `[📅 Pending]`
-- **Objectives**: Pattern mining, anomaly detection, clustering, bias audit.
-- **Deliverables**: `analytics/engine.py`, Isolation Forest models, DBSCAN clustering routines, Celery beat schedule, audit scripts.
-- **Steps**: Build Pandas feature extraction; train/test Isolation Forest for anomaly score; cluster unknown embeddings; publish metrics to `patterns` table; create bias audit harness using LFW/RFW.
-- **Dependencies**: scikit-learn, Pandas, NumPy, optional Prophet, joblib for model persistence.
-- **Testing/Validation**: Unit tests for compute functions; cron dry-runs; verify anomaly_score >0.7 triggers alerts.
-- **Pitfalls & Fixes**: Overfitting → cross-validation; large embeddings → PCA to 50 dims; privacy → add differential noise before export.
+**Status**: `[✅ Completed]`
+- **Objectives**: Pattern mining, anomaly detection, clustering, and bias audit capabilities.
+- **Deliverables**: `analytics/engine.py` (AnalyticsEngine + BiasAuditor classes), `analytics/tasks.py` (Celery beat schedule), `tests/test_analytics.py`, comprehensive README, models directory.
+- **Steps**: Built Pandas feature extraction (temporal, behavioral); trained/tested Isolation Forest for anomaly scoring; implemented DBSCAN clustering for unknowns; created 5 pattern types (frequent visitor, unusual hours, multi-camera, anomaly, unknown cluster); added bias audit harness with disparate impact calculation; integrated Celery beat schedule (4 periodic tasks); added model persistence with joblib.
+- **Dependencies**: scikit-learn 1.3+, Pandas 2.0+, NumPy 1.24+, joblib 1.3+, PCA preprocessing optional.
+- **Testing/Validation**: Unit tests for AnalyticsEngine and BiasAuditor (16 test cases); verify anomaly_score >0.7 triggers alerts; silhouette score validation for clustering; disparate impact 80% rule compliance.
+- **Pitfalls & Fixes**: Overfitting → PCA to 50 dims for large embeddings; async session management in Celery tasks → proper asyncio.run() wrapper; model training requires ≥100 samples → graceful degradation; clustering noise handling → -1 label exclusion.
 
 ## Phase 5 – Dashboard (Frontend UI)
 **Status**: `[✅ Completed]`
