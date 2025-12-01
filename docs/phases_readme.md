@@ -2,7 +2,7 @@
 
 This README tracks the seven sequential phases required to deliver the full SentinelForge CCTV security platform. Each phase builds on the previous one so workstreams can run in parallel without rework.
 
-**Overall Progress**: `[████░░░░░░] 43%` (3 of 7 phases completed)
+**Overall Progress**: `[██████░░░░] 57%` (4 of 7 phases completed)
 
 ---
 
@@ -25,7 +25,7 @@ This README tracks the seven sequential phases required to deliver the full Sent
 - **Pitfalls & Fixes**: Stream drops → exponential backoff reconnect; low light → gain adjustment/IR filter; CPU overload → batch every 5 frames.
 
 ## Phase 3 – Logging & Storage Layer (FastAPI Backend)
-**Status**: `[📅 Pending]`
+**Status**: `[✅ Completed]`
 - **Objectives**: Secure API for event ingestion, storage, privacy enforcement, and ALFIE hooks.
 - **Deliverables**: `api/main.py`, Pydantic models, async SQLAlchemy layer, Celery tasks, JWT auth middleware, `/api/alfie/alert` webhook.
 - **Steps**: Create `/log_sighting`; encrypt embeddings with Fernet; store event metadata; calculate flag levels; emit outbound webhook; schedule TTL purge for unknowns (>90 days); add rate limiting (SlowAPI) and Sentry logging.
