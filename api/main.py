@@ -22,6 +22,9 @@ from sqlalchemy.orm import sessionmaker
 
 from db.models import Base, Sighting, Person
 
+# Import extended router and websocket (will configure after app creation)
+from api.websocket import attach_socketio
+
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret")
 DB_URL = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
@@ -116,6 +119,16 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 async def get_db():
     async with async_session_maker() as session:
         yield session
+
+
+# Include extended API router
+from api.extended import router as extended_router
+import api.extended as extended_module
+extended_module.get_db = get_db  # Inject DB dependency
+app.include_router(extended_router, prefix="/api")
+
+# Attach WebSocket
+attach_socketio(app)
 
 
 # Endpoints
