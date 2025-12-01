@@ -1,8 +1,16 @@
-# SentinelForge
+# 🛡️ SentinelForge
 
 **Advanced CCTV Intelligence Platform with Real-Time Analytics & Face Recognition**
 
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.112%2B-009688)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 SentinelForge is a comprehensive security platform combining OpenCV-powered face detection, real-time WebSocket notifications, role-based access control, and live IP camera streaming. The system provides complete incident management, alert workflows, and advanced pattern analytics for enterprise security operations.
+
+---
 
 ## 🚀 Latest Updates (December 2025)
 
@@ -20,6 +28,8 @@ SentinelForge is a comprehensive security platform combining OpenCV-powered face
 - **Modern Dashboard** - Vanilla JS/Bootstrap 5 UI with 6 tabs, real-time updates, and mobile-responsive design
 
 See **[FEATURES.md](FEATURES.md)** for complete technical documentation and **[QUICKSTART.md](../QUICKSTART.md)** for installation guide.
+
+---
 
 ## 📁 Repository Structure
 
@@ -52,6 +62,8 @@ sentinelforge/
 ├── tests/            # Pytest suites
 └── pyproject.toml    # Dependencies + build config
 ```
+
+---
 
 ## 🚀 Quick Start
 
@@ -138,27 +150,29 @@ curl -X POST http://localhost:8000/api/auth/register `
 
 See **[QUICKSTART.md](../QUICKSTART.md)** for detailed setup instructions.
 
+---
+
 ## 🎯 Key Features
 
-### Real-Time Communication
+### 📡 Real-Time Communication
 - **WebSocket Server** (Socket.IO) for live alerts, sightings, and camera status updates
 - **Event Broadcasting** to subscribed users and rooms
 - **Auto-reconnection** and connection health monitoring
 
-### Security & Authentication
+### 🔐 Security & Authentication
 - **JWT Authentication** with HS256 algorithm and 24-hour token expiration
 - **Role-Based Access Control** (Admin, Operator, Viewer) with hierarchical permissions
 - **Bcrypt Password Hashing** for secure credential storage
 - **Endpoint Protection** with role requirements and authorization checks
 
-### Camera Management
+### 📷 Camera Management
 - **IP Webcam Pro Integration** for live MJPEG streaming
 - **Camera CRUD** operations with status tracking (Online/Offline/Error/Disabled)
 - **Live Stream Viewer** built into dashboard
 - **Heartbeat Monitoring** with last-seen timestamps
 - **Location & Zone Assignment** for spatial organization
 
-### Person Management
+### 👤 Person Management
 - **Photo Upload** with automatic face embedding extraction
 - **Multiple Photos** per person with JSONB array storage
 - **Full-Text Search** across person attributes
@@ -166,34 +180,34 @@ See **[QUICKSTART.md](../QUICKSTART.md)** for detailed setup instructions.
 - **Notes & Metadata** tracking
 - **Consent Management** with boolean flags
 
-### Alert System
+### 🚨 Alert System
 - **Severity Levels** (1-4: Low, Medium, High, Critical)
 - **Alert Lifecycle** (New → Acknowledged → Dismissed/Escalated)
 - **Assignment** to specific operators
 - **Real-Time Notifications** via WebSocket
 - **Filtering** by severity, status, and type
 
-### Incident Management
+### 📝 Incident Management
 - **Complete Workflow** (Open → Investigating → Resolved → Closed)
 - **Event Timeline** with automatic status change logging
 - **Sighting Attachments** to link events to incidents
 - **User Assignment** and tracking
 - **Severity Scoring** with escalation support
 
-### Analytics Engine
+### 🧠 Analytics Engine
 - **Pattern Detection** using Isolation Forest and DBSCAN clustering
 - **Anomaly Scoring** for unusual activity identification
 - **Time-Series Analysis** with hourly/daily aggregations
 - **Repeat Offender Flagging** (>3 appearances in 24h)
 - **Confidence Thresholds** for detection accuracy
 
-### Data Export
+### 📊 Data Export
 - **CSV Export** with date range filtering
 - **PDF Reports** (ReportLab integration prepared)
 - **Scheduled Exports** via Celery tasks
 - **10,000 Record Limit** for performance
 
-### Dashboard Features
+### 🖥️ Dashboard Features
 - **6 Tabs**: Overview, Cameras, Persons, Unknowns, Alerts, Incidents, Reports
 - **Live KPI Cards** with real-time statistics
 - **Camera Activity Charts** (Chart.js)
@@ -202,13 +216,15 @@ See **[QUICKSTART.md](../QUICKSTART.md)** for detailed setup instructions.
 - **Toast Notifications** for user feedback
 - **Responsive Design** with Bootstrap 5
 
-### Database Architecture
+### 🗄️ Database Architecture
 - **PostgreSQL 15+** with TimescaleDB for time-series optimization
 - **pgvector Extension** for face embedding similarity search
 - **15+ Tables** including users, cameras, alerts, incidents, persons, sightings
 - **Alembic Migrations** for version control
 - **JSONB Fields** for flexible metadata storage
 - **Indexed Queries** on created_at, status columns
+
+---
 
 ## 🔧 API Endpoints
 
@@ -252,6 +268,8 @@ See **[QUICKSTART.md](../QUICKSTART.md)** for detailed setup instructions.
 
 Full API documentation: **http://localhost:8000/docs**
 
+---
+
 ## 🧪 Testing
 
 Run test suites:
@@ -267,12 +285,16 @@ pytest tests/test_api_client.py
 pytest tests/test_dashboard_app.py
 ```
 
+---
+
 ## 📚 Documentation
 
 - **[FEATURES.md](FEATURES.md)** - Complete technical feature documentation
 - **[QUICKSTART.md](../QUICKSTART.md)** - Installation and setup guide
 - **[Architecture Docs](docs/architecture.md)** - System design and data flow
 - **[API Docs](http://localhost:8000/docs)** - Interactive OpenAPI documentation
+
+---
 
 ## 🛠️ Technology Stack
 
@@ -306,6 +328,8 @@ pytest tests/test_dashboard_app.py
 - Chart.js 4.4 (visualizations)
 - Socket.IO Client 4.7 (WebSocket)
 
+---
+
 ## 📊 Database Schema
 
 **Core Tables:**
@@ -325,6 +349,8 @@ pytest tests/test_dashboard_app.py
 - `CameraStatus` - ONLINE, OFFLINE, ERROR, DISABLED
 - `IncidentStatus` - OPEN, INVESTIGATING, RESOLVED, CLOSED
 - `AlertStatus` - NEW, ACKNOWLEDGED, DISMISSED, ESCALATED
+
+---
 
 ## 🚀 Deployment
 
@@ -346,9 +372,11 @@ pytest tests/test_dashboard_app.py
 - Use Redis cluster for HA
 - Enable Celery autoscaling
 
+---
+
 ## 📝 License
 
-[Your License Here]
+MIT License
 
 ## 🤝 Contributing
 

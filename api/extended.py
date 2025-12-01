@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,
 from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-# import face_recognition  # Optional - only needed for photo upload
+import face_recognition  # Optional - only needed for photo upload
 import numpy as np
 
 from db.models import (
@@ -489,66 +489,58 @@ async def upload_person_photo(
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Upload a photo for a person and extract face embedding"""
-    # NOTE: This endpoint requires face_recognition and OpenCV modules
-    # Install with: pip install face-recognition opencv-python
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Photo upload requires face_recognition module. Install with: pip install face-recognition opencv-python"
-    )
+    result = await db.execute(select(Person).where(Person.id == person_id))
+    person = result.scalar_one_or_none()
     
-    # Uncomment below when face_recognition is installed:
-    # result = await db.execute(select(Person).where(Person.id == person_id))
-    # person = result.scalar_one_or_none()
-    # 
-    # if not person:
-    #     raise HTTPException(status_code=404, detail="Person not found")
-    # 
-    # # Read image
-    # contents = await file.read()
-    # 
-    # # Convert to numpy array
-    # nparr = np.frombuffer(contents, np.uint8)
-    # import cv2
-    # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    # rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # 
-    # # Extract face embedding
-    # face_locations = face_recognition.face_locations(rgb)
-    # 
-    # if not face_locations:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="No face detected in image"
-    #     )
-    # 
-    # face_encodings = face_recognition.face_encodings(rgb, face_locations)
-    # 
-    # if not face_encodings:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_400_BAD_REQUEST,
-    #         detail="Could not extract face encoding"
-    #     )
-    # 
-    # # Store photo as base64
-    # photo_base64 = base64.b64encode(contents).decode('utf-8')
-    # photo_url = f"data:image/jpeg;base64,{photo_base64}"
-    # 
-    # # Update person
-    # if not person.photo_urls:
-    #     person.photo_urls = []
-    # person.photo_urls.append(photo_url)
-    # 
-    # # Update or create face embedding
-    # if person.face_embedding is None:
-    #     person.face_embedding = face_encodings[0].tolist()
-    # 
-    # await db.commit()
-    # 
-    # return {
-    #     "status": "uploaded",
-    #     "person_id": str(person_id),
-    #     "photo_count": len(person.photo_urls)
-    # }
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    
+    # Read image
+    contents = await file.read()
+    
+    # Convert to numpy array
+    nparr = np.frombuffer(contents, np.uint8)
+    import cv2
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    # Extract face embedding
+    face_locations = face_recognition.face_locations(rgb)
+    
+    if not face_locations:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No face detected in image"
+        )
+    
+    face_encodings = face_recognition.face_encodings(rgb, face_locations)
+    
+    if not face_encodings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not extract face encoding"
+        )
+    
+    # Store photo as base64
+    photo_base64 = base64.b64encode(contents).decode('utf-8')
+    photo_url = f"data:image/jpeg;base64,{photo_base64}"
+    
+    # Update person
+    if not person.photo_urls:
+        person.photo_urls = []
+    person.photo_urls.append(photo_url)
+    
+    # Update or create face embedding
+    if person.face_embedding is None:
+        person.face_embedding = face_encodings[0].tolist()
+    
+    await db.commit()
+    
+    return {
+        "status": "uploaded",
+        "person_id": str(person_id),
+        "photo_count": len(person.photo_urls)
+    }
 
 
 @router.delete("/persons/{person_id}", tags=["Persons"])
