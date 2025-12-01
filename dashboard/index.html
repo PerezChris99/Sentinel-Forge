@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SentinelForge - Security Dashboard</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="assets/custom.css">
+    
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-content">
+            <div class="logo">SENTINELFORGE</div>
+            <div class="header-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Total Persons</span>
+                    <span class="stat-value" id="total-persons">—</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Today</span>
+                    <span class="stat-value" id="today-sightings">—</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Active Flags</span>
+                    <span class="stat-value" id="active-flags">—</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="overview">Overview</button>
+        <button class="nav-tab" data-tab="persons">Persons</button>
+        <button class="nav-tab" data-tab="unknowns">Unknowns</button>
+        <button class="nav-tab" data-tab="reports">Reports</button>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Overview Tab -->
+        <div class="tab-content active" id="overview-tab">
+            <!-- KPI Cards -->
+            <div class="grid grid-4">
+                <div class="card">
+                    <div class="card-title">Total Sightings</div>
+                    <div class="card-value" id="kpi-total-sightings">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Known Persons</div>
+                    <div class="card-value" id="kpi-known-persons">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Unknowns (90d)</div>
+                    <div class="card-value" id="kpi-unknowns">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Flagged Events</div>
+                    <div class="card-value" id="kpi-flagged-events">—</div>
+                </div>
+            </div>
+
+            <!-- Recent Activity Grid -->
+            <div class="grid grid-2">
+                <!-- Recent Sightings -->
+                <div class="card">
+                    <h3 class="card-title mb-3">Recent Sightings</h3>
+                    <div id="recent-sightings-list">
+                        <div class="loading">Loading sightings...</div>
+                    </div>
+                </div>
+
+                <!-- Live Alerts -->
+                <div class="card">
+                    <h3 class="card-title mb-3">Live Alerts</h3>
+                    <div class="alert-ticker" id="alert-ticker">
+                        <p class="text-center" style="color: var(--ink-gray); font-size: 0.85rem;">No recent alerts</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Camera Activity Chart -->
+            <div class="card">
+                <h3 class="card-title mb-3">Camera Activity (24h)</h3>
+                <canvas id="camera-activity-chart" height="80"></canvas>
+            </div>
+        </div>
+
+        <!-- Persons Tab -->
+        <div class="tab-content" id="persons-tab">
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+                <span class="filter-label">Filter:</span>
+                <select id="person-filter">
+                    <option value="all">All Persons</option>
+                    <option value="flagged">Flagged Only</option>
+                    <option value="recent">Recent Activity</option>
+                </select>
+                <button class="btn btn-primary" style="margin-left: auto;" onclick="refreshPersons()">Refresh</button>
+            </div>
+
+            <!-- Persons Gallery -->
+            <div class="gallery" id="persons-gallery">
+                <div class="loading">Loading persons...</div>
+            </div>
+        </div>
+
+        <!-- Unknowns Tab -->
+        <div class="tab-content" id="unknowns-tab">
+            <div class="card">
+                <h3 class="card-title mb-3">Unknown Individuals (Past 90 Days)</h3>
+                <p style="color: var(--ink-gray); font-size: 0.9rem; margin-bottom: 1.5rem;">
+                    Unidentified faces detected by the system. Data automatically purged after 90 days per retention policy.
+                </p>
+                <div class="gallery" id="unknowns-gallery">
+                    <div class="loading">Loading unknowns...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div class="tab-content" id="reports-tab">
+            <!-- Date Range Filter -->
+            <div class="filter-bar">
+                <span class="filter-label">Date Range:</span>
+                <input type="date" id="report-start-date" class="form-control" style="width: auto;">
+                <span style="margin: 0 0.5rem;">to</span>
+                <input type="date" id="report-end-date" class="form-control" style="width: auto;">
+                <button class="btn" onclick="generateReport()">Generate Report</button>
+            </div>
+
+            <!-- Report Summary -->
+            <div class="grid grid-3">
+                <div class="card">
+                    <div class="card-title">Total Events</div>
+                    <div class="card-value" id="report-total-events">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Unique Persons</div>
+                    <div class="card-value" id="report-unique-persons">—</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Avg. Confidence</div>
+                    <div class="card-value" id="report-avg-confidence">—</div>
+                </div>
+            </div>
+
+            <!-- Report Table -->
+            <div class="card">
+                <h3 class="card-title mb-3">Detailed Event Log</h3>
+                <table id="report-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Person ID</th>
+                            <th>Camera</th>
+                            <th>Confidence</th>
+                            <th>Flag Level</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center" style="padding: 2rem; color: var(--ink-gray);">
+                                Select date range and click Generate Report
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="assets/app.js"></script>
+</body>
+</html>

@@ -55,6 +55,8 @@ class TestDetectionEngine(unittest.TestCase):
         
         self.assertEqual(len(events), 1)
         self.assertTrue(events[0].person_id.startswith("unknown"))
+        # Unknown faces should be flagged at detection
+        self.assertEqual(events[0].flag_level, 1)
 
 if __name__ == '__main__':
     unittest.main()

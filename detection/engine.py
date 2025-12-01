@@ -158,6 +158,9 @@ class DetectionEngine:
             _, buffer = cv2.imencode('.jpg', face_roi)
             b64_crop = base64.b64encode(buffer).decode('utf-8')
 
+            # Set base flag level: unknown faces are always flagged
+            base_flag_level = 1 if person_id and person_id.startswith("unknown") else 0
+
             event = DetectionEvent(
                 event_type="sighting",
                 timestamp=datetime.utcnow().isoformat(),
@@ -166,7 +169,7 @@ class DetectionEngine:
                 confidence=confidence,
                 embedding=embedding.tolist(),
                 cropped_b64=b64_crop,
-                flag_level=0 # Default, to be updated by backend logic
+                flag_level=base_flag_level  # Unknown faces flagged at detection
             )
             events.append(event)
 
