@@ -144,6 +144,10 @@ async function loadOverview() {
         if (cameraData) {
             renderCameraChart(cameraData);
         }
+        
+        // Load NEW charts (Visual Polish)
+        await renderSeverityChart();
+        await renderCameraVolumeChart();
 
         // Load alerts
         const alerts = await API.get('/api/alerts/recent?limit=20');
@@ -159,25 +163,19 @@ function renderRecentSightings(sightings) {
     const container = document.getElementById('recent-sightings-list');
     
     if (!sightings || sightings.length === 0) {
-        container.innerHTML = '<p class="text-center" style="color: var(--ink-gray);">No recent sightings</p>';
+        container.innerHTML = '<p class="text-mini text-muted text-center" style="padding:1rem;">No recent sightings</p>';
         return;
     }
 
     const html = sightings.map(s => `
-        <div style="padding: 0.75rem 0; border-bottom: 1px solid var(--border-subtle);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <strong>${s.person_name || 'Unknown'}</strong>
-                    <span style="color: var(--ink-gray); font-size: 0.85rem; margin-left: 0.5rem;">
-                        ${s.camera_id}
-                    </span>
-                </div>
-                <div style="text-align: right;">
-                    ${getFlagBadge(s.flag_level)}
-                    <div style="font-size: 0.8rem; color: var(--ink-gray); margin-top: 0.25rem;">
-                        ${formatTimestamp(s.timestamp)}
-                    </div>
-                </div>
+        <div class="sighting-row">
+            <div class="sighting-info">
+                <strong>${s.person_name || 'Unknown'}</strong>
+                <span class="sighting-meta">${s.camera_id}</span>
+            </div>
+            <div style="text-align: right;">
+                ${getFlagBadge(s.flag_level)}
+                <div class="sighting-meta">${formatTimestamp(s.timestamp).split(',')[1]}</div>
             </div>
         </div>
     `).join('');
@@ -189,18 +187,81 @@ function renderAlerts(alerts) {
     const container = document.getElementById('alert-ticker');
     
     if (!alerts || alerts.length === 0) {
-        container.innerHTML = '<p class="text-center" style="color: var(--ink-gray); font-size: 0.85rem;">No recent alerts</p>';
+        container.innerHTML = '<p class="text-mini text-muted text-center">No recent alerts</p>';
         return;
     }
 
     const html = alerts.map(alert => `
-        <div class="alert-item">
-            <span class="alert-time">${formatTimestamp(alert.timestamp)}</span> — 
+        <div class="alert-item-compact">
+            <span style="font-weight:700">${formatTimestamp(alert.timestamp).split(',')[1]}</span> 
             ${alert.message}
         </div>
     `).join('');
 
     container.innerHTML = html;
+}
+
+// === NEW CHART FUNCTIONS ===
+
+async function renderSeverityChart() {
+    const ctx = document.getElementById('severity-chart');
+    if (!ctx) return;
+    
+    // Fetch real data
+    const data = await API.get('/api/stats/severity_distribution');
+    const chartData = data ? data.data : [100, 0, 0, 0]; // Fallback
+    
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Normal', 'Flagged', 'Repeat', 'Crit'],
+            datasets: [{
+                data: chartData,
+                backgroundColor: ['#ecf0f1', '#f39c12', '#e67e22', '#c0392b'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } }
+            },
+            cutout: '70%'
+        }
+    });
+}
+
+async function renderCameraVolumeChart() {
+    const ctx = document.getElementById('camera-volume-chart');
+    if (!ctx) return;
+    
+    // Fetch real data
+    const data = await API.get('/api/stats/camera_volume');
+    const labels = data ? data.labels.map(l => l.substring(0,6)) : ['None'];
+    const values = data ? data.data : [0];
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Sightings',
+                data: values,
+                backgroundColor: '#34495e',
+                borderRadius: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { font: { size: 8 } }, grid: { display: false } },
+                y: { display: false, grid: { display: false } }
+            }
+        }
+    });
 }
 
 function renderCameraChart(data) {

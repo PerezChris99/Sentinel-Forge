@@ -48,52 +48,77 @@
     </nav>
 
     <!-- Main Content -->
-    <div class="container">
+    <div class="container-fluid dashboard-container">
         <!-- Overview Tab -->
         <div class="tab-content active" id="overview-tab">
-            <!-- KPI Cards -->
-            <div class="grid grid-4">
-                <div class="card">
-                    <div class="card-title">Total Sightings</div>
-                    <div class="card-value" id="kpi-total-sightings">—</div>
-                </div>
-                <div class="card">
-                    <div class="card-title">Known Persons</div>
-                    <div class="card-value" id="kpi-known-persons">—</div>
-                </div>
-                <div class="card">
-                    <div class="card-title">Unknowns (90d)</div>
-                    <div class="card-value" id="kpi-unknowns">—</div>
-                </div>
-                <div class="card">
-                    <div class="card-title">Flagged Events</div>
-                    <div class="card-value" id="kpi-flagged-events">—</div>
-                </div>
-            </div>
-
-            <!-- Recent Activity Grid -->
-            <div class="grid grid-2">
-                <!-- Recent Sightings -->
-                <div class="card">
-                    <h3 class="card-title mb-3">Recent Sightings</h3>
-                    <div id="recent-sightings-list">
-                        <div class="loading">Loading sightings...</div>
+            <!-- Mosaic Grid Layout -->
+            <div class="mosaic-grid">
+                
+                <!-- 1. KPIs (Top Bar) -->
+                <div class="mosaic-tile tile-kpi card">
+                    <div class="kpi-group">
+                        <div class="kpi-item">
+                            <div class="kpi-label">Sightings</div>
+                            <div class="kpi-val" id="kpi-total-sightings">—</div>
+                        </div>
+                        <div class="kpi-divider"></div>
+                        <div class="kpi-item">
+                            <div class="kpi-label">Known</div>
+                            <div class="kpi-val" id="kpi-known-persons">—</div>
+                        </div>
+                        <div class="kpi-divider"></div>
+                        <div class="kpi-item">
+                            <div class="kpi-label">Unknowns</div>
+                            <div class="kpi-val" id="kpi-unknowns">—</div>
+                        </div>
+                        <div class="kpi-divider"></div>
+                        <div class="kpi-item">
+                            <div class="kpi-label">Flagged</div>
+                            <div class="kpi-val" id="kpi-flagged-events">—</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Live Alerts -->
-                <div class="card">
-                    <h3 class="card-title mb-3">Live Alerts</h3>
-                    <div class="alert-ticker" id="alert-ticker">
-                        <p class="text-center" style="color: var(--ink-gray); font-size: 0.85rem;">No recent alerts</p>
+                <!-- 2. Main Chart (Activity) -->
+                <div class="mosaic-tile tile-main-chart card">
+                    <div class="tile-header">Activity (24h)</div>
+                    <div class="chart-wrapper">
+                        <canvas id="camera-activity-chart"></canvas>
                     </div>
                 </div>
-            </div>
 
-            <!-- Camera Activity Chart -->
-            <div class="card">
-                <h3 class="card-title mb-3">Camera Activity (24h)</h3>
-                <canvas id="camera-activity-chart" height="80"></canvas>
+                <!-- 3. Recent Sightings List -->
+                <div class="mosaic-tile tile-list card">
+                    <div class="tile-header">Recent Sightings</div>
+                    <div id="recent-sightings-list" class="scroll-content">
+                        <div class="loading-mini">Loading...</div>
+                    </div>
+                </div>
+
+                <!-- 4. Severity Chart (Pie) -->
+                <div class="mosaic-tile tile-chart-1 card">
+                    <div class="tile-header">Severity</div>
+                    <div class="chart-wrapper-mini">
+                        <canvas id="severity-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 5. Top Cameras (Bar) -->
+                <div class="mosaic-tile tile-chart-2 card">
+                    <div class="tile-header">Top Cameras</div>
+                    <div class="chart-wrapper-mini">
+                        <canvas id="camera-volume-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 6. Alert Ticker -->
+                <div class="mosaic-tile tile-alerts card">
+                    <div class="tile-header">Live Alerts</div>
+                    <div class="alert-ticker-compact" id="alert-ticker">
+                        <p class="text-mini text-muted">No recent alerts</p>
+                    </div>
+                </div>
+
             </div>
         </div>
 

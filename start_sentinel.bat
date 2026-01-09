@@ -2,6 +2,9 @@
 TITLE Sentinel Forge - Security System
 COLOR 0A
 
+:: Ensure we are running from the script directory
+cd /d "%~dp0"
+
 echo ===================================================
 echo      SENTINEL FORGE SECURITY SYSTEM
 echo ===================================================

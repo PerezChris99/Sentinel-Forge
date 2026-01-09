@@ -616,3 +616,48 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/api/stats/severity_distribution")
+async def get_severity_distribution(db: AsyncSession = Depends(get_db)):
+    """Get distribution of sightings by flag_level (severity)."""
+    from sqlalchemy import select, func
+
+    # Count by flag_level
+    query = (
+        select(Sighting.flag_level, func.count(Sighting.id))
+        .group_by(Sighting.flag_level)
+    )
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    # Map to standard levels
+    distribution = {0: 0, 1: 0, 2: 0, 3: 0} 
+    for level, count in rows:
+        distribution[level] = count
+        
+    return {
+        "labels": ["Normal", "Flagged", "Repeat", "Critical"],
+        "data": [distribution.get(0, 0), distribution.get(1, 0), distribution.get(2, 0), distribution.get(3, 0)]
+    }
+
+
+@app.get("/api/stats/camera_volume")
+async def get_camera_volume(db: AsyncSession = Depends(get_db)):
+    """Get total sightings count by camera_id."""
+    from sqlalchemy import select, func
+
+    query = (
+        select(Sighting.camera_id, func.count(Sighting.id))
+        .group_by(Sighting.camera_id)
+        .order_by(func.count(Sighting.id).desc())
+        .limit(10) # Top 10 cameras
+    )
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    return {
+        "labels": [row[0] for row in rows],
+        "data": [row[1] for row in rows]
+    }
