@@ -5,12 +5,9 @@ JWT token handling, password hashing, RBAC
 import os
 from datetime import datetime, timedelta
 from typing import Optional
-from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from db.models import User, UserRole
 
@@ -18,20 +15,22 @@ from db.models import User, UserRole
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret-key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
+# Password hashing — use bcrypt directly (passlib has compat issues with bcrypt 4.1+/Python 3.13)
+import bcrypt as _bcrypt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    return _bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8") if isinstance(hashed_password, str) else hashed_password
+    )
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
