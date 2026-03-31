@@ -1,19 +1,64 @@
-"""
+﻿"""
 Database models for SentinelForge.
-Requires PostgreSQL with TimescaleDB and pgvector extensions.
+Supports PostgreSQL (with TimescaleDB/pgvector) and SQLite (dev mode).
 """
+import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, JSON, Enum as SQLEnum, TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from pgvector.sqlalchemy import Vector
 import enum
 
+# --- Portable UUID type (works on both PostgreSQL and SQLite) ---
+_DB_URL = os.getenv("DB_URL", "")
+_USE_PG = "postgresql" in _DB_URL
+
+
+class PortableUUID(TypeDecorator):
+    """Platform-agnostic UUID column: native UUID on PostgreSQL, CHAR(36) on SQLite."""
+    impl = String(36)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return str(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            import uuid as _uuid
+            return _uuid.UUID(value) if not isinstance(value, _uuid.UUID) else value
+        return value
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import UUID as PGUUID
+            return dialect.type_descriptor(PortableUUID())
+        return dialect.type_descriptor(String(36))
+
+
+# --- Portable Vector type (pgvector on Postgres, JSON on SQLite) ---
+try:
+    from pgvector.sqlalchemy import Vector as _PGVector
+    _has_pgvector = True
+except ImportError:
+    _has_pgvector = False
+
+
+def VectorColumn(dim: int):
+    """Return a Vector column on PostgreSQL or a Text column as fallback."""
+    if _has_pgvector and _USE_PG:
+        return Column(_PGVector(dim))
+    return Column(Text)  # Store as JSON string in SQLite
+
+
 Base = declarative_base()
+
+# Alias used throughout
+PGUUID = PortableUUID
 
 
 # Enums
@@ -47,11 +92,11 @@ class AlertStatus(enum.Enum):
 class Person(Base):
     __tablename__ = "persons"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False)
     role = Column(String(100))
     details = Column(JSON)
-    embedding = Column(Vector(128))  # 128-dimensional face embedding
+    embedding = VectorColumn(128)  # 128-dimensional face embedding
     known_status = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     consent_given = Column(Boolean, default=False, nullable=False)
@@ -68,12 +113,12 @@ class Person(Base):
 class Sighting(Base):
     __tablename__ = "sightings"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    person_id = Column(PGUUID(as_uuid=True), ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    person_id = Column(PortableUUID(), ForeignKey("persons.id", ondelete="SET NULL"), nullable=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     camera_id = Column(String(100), nullable=False, index=True)
     confidence = Column(Float, nullable=False)
-    embedding = Column(Vector(128))  # Encrypted in application layer
+    embedding = VectorColumn(128)  # Encrypted in application layer
     face_image_b64 = Column(Text)
     flag_level = Column(Integer, default=0, nullable=False)  # 0=normal, 1=repeat, 2=high_risk, 3=critical
     extra_metadata = Column(JSON)  # pose, lighting, etc.
@@ -86,8 +131,8 @@ class Sighting(Base):
 class Pattern(Base):
     __tablename__ = "patterns"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    person_id = Column(PGUUID(as_uuid=True), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    person_id = Column(PortableUUID(), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
     date = Column(DateTime, nullable=False, index=True)
     sighting_count = Column(Integer, default=0)
     avg_duration = Column(Float)  # Average duration in seconds
@@ -101,8 +146,8 @@ class Pattern(Base):
 class FootageRef(Base):
     __tablename__ = "footage_refs"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="CASCADE"), nullable=False)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    sighting_id = Column(PortableUUID(), ForeignKey("sightings.id", ondelete="CASCADE"), nullable=False)
     video_path = Column(String(500), nullable=False)
     start_frame = Column(Integer, nullable=False)
     duration = Column(Integer)  # Duration in frames
@@ -114,7 +159,7 @@ class FootageRef(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     username = Column(String(100), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
@@ -133,7 +178,7 @@ class User(Base):
 class Camera(Base):
     __tablename__ = "cameras"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False)
     camera_id = Column(String(100), unique=True, nullable=False, index=True)
     stream_url = Column(String(500), nullable=False)  # IP Webcam URL
@@ -152,15 +197,15 @@ class Camera(Base):
 class Alert(Base):
     __tablename__ = "alerts"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="CASCADE"))
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    sighting_id = Column(PortableUUID(), ForeignKey("sightings.id", ondelete="CASCADE"))
     alert_type = Column(String(50), nullable=False)  # unknown, repeat_offender, anomaly
     severity = Column(Integer, default=1, nullable=False)  # 1=low, 2=medium, 3=high, 4=critical
     status = Column(SQLEnum(AlertStatus), default=AlertStatus.NEW, nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     acknowledged_at = Column(DateTime)
-    assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    assigned_to = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"))
     resolved_at = Column(DateTime)
     notes = Column(Text)
     extra_metadata = Column(JSON)
@@ -173,16 +218,16 @@ class Alert(Base):
 class Incident(Base):
     __tablename__ = "incidents"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    person_id = Column(PGUUID(as_uuid=True), ForeignKey("persons.id", ondelete="SET NULL"))
-    camera_id = Column(PGUUID(as_uuid=True), ForeignKey("cameras.id", ondelete="SET NULL"))
+    person_id = Column(PortableUUID(), ForeignKey("persons.id", ondelete="SET NULL"))
+    camera_id = Column(PortableUUID(), ForeignKey("cameras.id", ondelete="SET NULL"))
     status = Column(SQLEnum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False)
     severity = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
-    assigned_to = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_by = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    assigned_to = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"))
     resolved_at = Column(DateTime)
     extra_metadata = Column(JSON)
 
@@ -195,13 +240,13 @@ class Incident(Base):
 class IncidentEvent(Base):
     __tablename__ = "incident_events"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    incident_id = Column(PGUUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
-    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="SET NULL"))
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    incident_id = Column(PortableUUID(), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    sighting_id = Column(PortableUUID(), ForeignKey("sightings.id", ondelete="SET NULL"))
     event_type = Column(String(50), nullable=False)  # sighting, note, status_change
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_by = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_by = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"))
     extra_metadata = Column(JSON)
 
     # Relationships
@@ -212,8 +257,8 @@ class IncidentEvent(Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    user_id = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"))
     action = Column(String(100), nullable=False)  # login, view_person, delete_sighting
     resource_type = Column(String(50))  # person, sighting, incident
     resource_id = Column(String(255))
@@ -229,8 +274,8 @@ class AuditLog(Base):
 class SearchQuery(Base):
     __tablename__ = "search_queries"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    user_id = Column(PortableUUID(), ForeignKey("users.id", ondelete="SET NULL"))
     query_text = Column(Text, nullable=False)
     filters = Column(JSON)
     result_count = Column(Integer)
@@ -248,8 +293,8 @@ class DetectedObject(Base):
 
     __tablename__ = "detected_objects"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    sighting_id = Column(PGUUID(as_uuid=True), ForeignKey("sightings.id", ondelete="SET NULL"), nullable=True)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
+    sighting_id = Column(PortableUUID(), ForeignKey("sightings.id", ondelete="SET NULL"), nullable=True)
     track_id = Column(String(100), index=True)
     object_class = Column(String(100), nullable=False)
     confidence = Column(Float, default=0.0)
@@ -272,7 +317,7 @@ class Track(Base):
 
     __tablename__ = "tracks"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     track_label = Column(String(100), unique=True, nullable=False, index=True)
     camera_id = Column(String(100), index=True)
     object_class = Column(String(100))
@@ -292,7 +337,7 @@ class BehaviorEventRecord(Base):
 
     __tablename__ = "behavior_events"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     behavior_type = Column(String(50), nullable=False, index=True)
     severity = Column(Integer, default=1, nullable=False)
     track_id = Column(String(100), index=True)
@@ -300,7 +345,7 @@ class BehaviorEventRecord(Base):
     zone_id = Column(String(100), index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     description = Column(Text)
-    metadata = Column(JSON)
+    extra_metadata = Column(JSON)
 
 
 # ===== VEHICLE TABLE =====
@@ -310,7 +355,7 @@ class Vehicle(Base):
 
     __tablename__ = "vehicles"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     track_id = Column(String(100), index=True)
     vehicle_type = Column(String(50), nullable=False)
     color = Column(String(30))
@@ -329,7 +374,7 @@ class ZoneRecord(Base):
 
     __tablename__ = "zones"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     zone_id = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
     zone_type = Column(String(50), default="general")
@@ -349,7 +394,7 @@ class EntityRelationship(Base):
 
     __tablename__ = "entity_relationships"
 
-    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(PortableUUID(), primary_key=True, default=uuid4)
     source_type = Column(String(50), nullable=False, index=True)
     source_id = Column(String(255), nullable=False, index=True)
     target_type = Column(String(50), nullable=False, index=True)

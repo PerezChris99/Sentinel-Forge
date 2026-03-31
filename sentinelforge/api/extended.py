@@ -1,4 +1,4 @@
-"""
+﻿"""
 Extended API endpoints for authentication, camera management, alerts, incidents, and search
 """
 from datetime import datetime, timedelta
@@ -10,8 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,
 from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-import face_recognition  # Optional - only needed for photo upload
-import numpy as np
+
+try:
+    import face_recognition
+    import numpy as np
+    _HAS_FACE_RECOGNITION = True
+except ImportError:
+    _HAS_FACE_RECOGNITION = False
 
 from db.models import (
     User, UserRole, Camera, CameraStatus, Alert, AlertStatus,
@@ -25,10 +30,17 @@ from api.auth import (
 )
 
 
-# DB Dependency (will be imported from main.py)
+# DB Dependency — resolved at call time from the module attribute
+# main.py sets: extended_module.get_db = <real get_db>
+_real_get_db = None
+
 async def get_db():
-    """Placeholder - will use main.py's get_db"""
-    pass
+    """Delegates to the real get_db injected by main.py"""
+    if _real_get_db is not None:
+        async for session in _real_get_db():
+            yield session
+    else:
+        raise RuntimeError("Database dependency not configured")
 
 
 # Router
@@ -57,7 +69,7 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/auth/register", response_model=TokenResponse, tags=["Authentication"])
-async def register(user_data: UserRegister, db: AsyncSession = Depends()):
+async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register a new user"""
     # Check if username/email exists
     result = await db.execute(
@@ -89,7 +101,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends()):
     await db.refresh(user)
     
     # Create token
-    access_token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    access_token = create_access_token(data={"sub": str(user.id), "username": user.username, "role": user.role.value})
     
     return {
         "access_token": access_token,
@@ -104,7 +116,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends()):
 
 
 @router.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
-async def login(credentials: UserLogin, db: AsyncSession = Depends()):
+async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """Login user and return JWT token"""
     result = await db.execute(
         select(User).where(User.username == credentials.username)
@@ -128,7 +140,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends()):
     await db.commit()
     
     # Create token
-    access_token = create_access_token(data={"sub": str(user.id), "username": user.username})
+    access_token = create_access_token(data={"sub": str(user.id), "username": user.username, "role": user.role.value})
     
     return {
         "access_token": access_token,
@@ -178,7 +190,7 @@ class CameraUpdate(BaseModel):
 @router.post("/cameras", tags=["Cameras"])
 async def create_camera(
     camera_data: CameraCreate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Create a new camera"""
@@ -220,7 +232,7 @@ async def create_camera(
 
 @router.get("/cameras", tags=["Cameras"])
 async def list_cameras(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     enabled_only: bool = False
 ):
     """List all cameras"""
@@ -248,7 +260,7 @@ async def list_cameras(
 
 
 @router.get("/cameras/{camera_id}", tags=["Cameras"])
-async def get_camera(camera_id: str, db: AsyncSession = Depends()):
+async def get_camera(camera_id: str, db: AsyncSession = Depends(get_db)):
     """Get camera details"""
     result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     camera = result.scalar_one_or_none()
@@ -275,7 +287,7 @@ async def get_camera(camera_id: str, db: AsyncSession = Depends()):
 async def update_camera(
     camera_id: str,
     camera_data: CameraUpdate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Update camera settings"""
@@ -307,7 +319,7 @@ async def update_camera(
 @router.delete("/cameras/{camera_id}", tags=["Cameras"])
 async def delete_camera(
     camera_id: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.ADMIN))
 ):
     """Delete a camera"""
@@ -324,7 +336,7 @@ async def delete_camera(
 
 
 @router.post("/cameras/{camera_id}/heartbeat", tags=["Cameras"])
-async def camera_heartbeat(camera_id: str, db: AsyncSession = Depends()):
+async def camera_heartbeat(camera_id: str, db: AsyncSession = Depends(get_db)):
     """Update camera last seen (heartbeat)"""
     result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     camera = result.scalar_one_or_none()
@@ -359,7 +371,7 @@ class PersonUpdate(BaseModel):
 @router.post("/persons", tags=["Persons"])
 async def create_person(
     person_data: PersonCreate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Create a new person"""
@@ -388,7 +400,7 @@ async def create_person(
 
 @router.get("/persons", tags=["Persons"])
 async def list_persons(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     include_archived: bool = False,
     search: Optional[str] = None
 ):
@@ -425,7 +437,7 @@ async def list_persons(
 
 
 @router.get("/persons/{person_id}", tags=["Persons"])
-async def get_person(person_id: UUID, db: AsyncSession = Depends()):
+async def get_person(person_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get person details"""
     result = await db.execute(select(Person).where(Person.id == person_id))
     person = result.scalar_one_or_none()
@@ -456,7 +468,7 @@ async def get_person(person_id: UUID, db: AsyncSession = Depends()):
 async def update_person(
     person_id: UUID,
     person_data: PersonUpdate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Update person information"""
@@ -486,10 +498,16 @@ async def update_person(
 async def upload_person_photo(
     person_id: UUID,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Upload a photo for a person and extract face embedding"""
+    if not _HAS_FACE_RECOGNITION:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="face_recognition library not installed"
+        )
+    import numpy as np
     result = await db.execute(select(Person).where(Person.id == person_id))
     person = result.scalar_one_or_none()
     
@@ -547,7 +565,7 @@ async def upload_person_photo(
 @router.delete("/persons/{person_id}", tags=["Persons"])
 async def delete_person(
     person_id: UUID,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.ADMIN))
 ):
     """Delete a person (soft delete via archive)"""
@@ -572,7 +590,7 @@ class AlertUpdate(BaseModel):
 
 @router.get("/alerts", tags=["Alerts"])
 async def list_alerts(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     status: Optional[AlertStatus] = None,
     severity: Optional[int] = None,
     limit: int = 100
@@ -609,7 +627,7 @@ async def list_alerts(
 @router.post("/alerts/{alert_id}/acknowledge", tags=["Alerts"])
 async def acknowledge_alert(
     alert_id: UUID,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     """Acknowledge an alert"""
@@ -631,7 +649,7 @@ async def acknowledge_alert(
 @router.post("/alerts/{alert_id}/dismiss", tags=["Alerts"])
 async def dismiss_alert(
     alert_id: UUID,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Dismiss an alert"""
@@ -652,7 +670,7 @@ async def dismiss_alert(
 @router.post("/alerts/{alert_id}/escalate", tags=["Alerts"])
 async def escalate_alert(
     alert_id: UUID,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Escalate an alert"""
@@ -691,7 +709,7 @@ class IncidentUpdate(BaseModel):
 @router.post("/incidents", tags=["Incidents"])
 async def create_incident(
     incident_data: IncidentCreate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Create a new incident"""
@@ -720,7 +738,7 @@ async def create_incident(
 
 @router.get("/incidents", tags=["Incidents"])
 async def list_incidents(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     status: Optional[IncidentStatus] = None,
     limit: int = 50
 ):
@@ -752,7 +770,7 @@ async def list_incidents(
 
 
 @router.get("/incidents/{incident_id}", tags=["Incidents"])
-async def get_incident(incident_id: UUID, db: AsyncSession = Depends()):
+async def get_incident(incident_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get incident details with events"""
     result = await db.execute(select(Incident).where(Incident.id == incident_id))
     incident = result.scalar_one_or_none()
@@ -798,7 +816,7 @@ async def get_incident(incident_id: UUID, db: AsyncSession = Depends()):
 async def update_incident(
     incident_id: UUID,
     incident_data: IncidentUpdate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR))
 ):
     """Update incident"""
@@ -846,7 +864,7 @@ async def add_incident_event(
     event_type: str,
     description: str,
     sighting_id: Optional[UUID] = None,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
     """Add an event to an incident"""
@@ -874,7 +892,7 @@ async def add_incident_event(
 @router.get("/search", tags=["Search"])
 async def search_all(
     query: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     limit: int = 50,
     user: User = Depends(get_current_user)
 ):
@@ -943,7 +961,7 @@ async def search_all(
 
 @router.get("/export/csv", tags=["Export"])
 async def export_csv(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     user: User = Depends(require_role(UserRole.OPERATOR))
@@ -1007,7 +1025,7 @@ class TrackCreate(BaseModel):
 @router.post("/detections", tags=["Detections"])
 async def create_detection(
     data: DetectedObjectCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Log a detected object from the detection pipeline."""
     obj = DetectedObject(
@@ -1033,7 +1051,7 @@ async def create_detection(
 
 @router.get("/detections", tags=["Detections"])
 async def list_detections(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     camera_id: Optional[str] = None,
     object_class: Optional[str] = None,
     limit: int = 100,
@@ -1065,7 +1083,7 @@ async def list_detections(
 
 
 @router.get("/detections/{detection_id}", tags=["Detections"])
-async def get_detection(detection_id: UUID, db: AsyncSession = Depends()):
+async def get_detection(detection_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get a single detection by ID."""
     result = await db.execute(select(DetectedObject).where(DetectedObject.id == detection_id))
     obj = result.scalar_one_or_none()
@@ -1089,7 +1107,7 @@ async def get_detection(detection_id: UUID, db: AsyncSession = Depends()):
 @router.post("/tracks", tags=["Tracks"])
 async def create_track(
     data: TrackCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Create or register a new track."""
     # Check uniqueness
@@ -1119,7 +1137,7 @@ async def create_track(
 
 @router.get("/tracks", tags=["Tracks"])
 async def list_tracks(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     camera_id: Optional[str] = None,
     is_active: Optional[bool] = None,
     limit: int = 100,
@@ -1150,7 +1168,7 @@ async def list_tracks(
 
 
 @router.get("/tracks/{track_label}", tags=["Tracks"])
-async def get_track(track_label: str, db: AsyncSession = Depends()):
+async def get_track(track_label: str, db: AsyncSession = Depends(get_db)):
     """Get a track by its label."""
     result = await db.execute(select(Track).where(Track.track_label == track_label))
     track = result.scalar_one_or_none()
@@ -1171,7 +1189,7 @@ async def get_track(track_label: str, db: AsyncSession = Depends()):
 @router.put("/tracks/{track_label}/deactivate", tags=["Tracks"])
 async def deactivate_track(
     track_label: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR)),
 ):
     """Mark a track as inactive (ended)."""
@@ -1200,7 +1218,7 @@ class BehaviorEventCreate(BaseModel):
 @router.post("/behaviors", tags=["Behaviors"])
 async def create_behavior_event(
     data: BehaviorEventCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Log a behavior analysis event."""
     record = BehaviorEventRecord(
@@ -1211,7 +1229,7 @@ async def create_behavior_event(
         zone_id=data.zone_id,
         timestamp=datetime.utcnow(),
         description=data.description,
-        metadata=data.metadata,
+        extra_metadata=data.metadata,
     )
     db.add(record)
     await db.commit()
@@ -1226,7 +1244,7 @@ async def create_behavior_event(
 
 @router.get("/behaviors", tags=["Behaviors"])
 async def list_behavior_events(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     behavior_type: Optional[str] = None,
     zone_id: Optional[str] = None,
     camera_id: Optional[str] = None,
@@ -1265,7 +1283,7 @@ async def list_behavior_events(
 
 @router.get("/behaviors/stats", tags=["Behaviors"])
 async def behavior_stats(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     hours: int = 24,
 ):
     """Return aggregated behavior event counts by type."""
@@ -1302,7 +1320,7 @@ class VehicleCreate(BaseModel):
 @router.post("/vehicles", tags=["Vehicles"])
 async def create_vehicle(
     data: VehicleCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Log a vehicle detection / LPR result."""
     vehicle = Vehicle(
@@ -1329,7 +1347,7 @@ async def create_vehicle(
 
 @router.get("/vehicles", tags=["Vehicles"])
 async def list_vehicles(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     plate_text: Optional[str] = None,
     vehicle_type: Optional[str] = None,
     color: Optional[str] = None,
@@ -1370,7 +1388,7 @@ async def list_vehicles(
 @router.get("/vehicles/search/{plate}", tags=["Vehicles"])
 async def search_vehicle_by_plate(
     plate: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     limit: int = 50,
 ):
     """Search vehicles by partial plate number."""
@@ -1422,7 +1440,7 @@ class ZoneUpdate(BaseModel):
 @router.post("/zones", tags=["Zones"])
 async def create_zone(
     data: ZoneCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Create a geospatial zone."""
     existing = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == data.zone_id))
@@ -1454,7 +1472,7 @@ async def create_zone(
 
 @router.get("/zones", tags=["Zones"])
 async def list_zones(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     zone_type: Optional[str] = None,
     floor: Optional[int] = None,
     limit: int = 100,
@@ -1487,7 +1505,7 @@ async def list_zones(
 
 
 @router.get("/zones/{zone_id}", tags=["Zones"])
-async def get_zone(zone_id: str, db: AsyncSession = Depends()):
+async def get_zone(zone_id: str, db: AsyncSession = Depends(get_db)):
     """Get a zone by its ID."""
     result = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == zone_id))
     zone = result.scalar_one_or_none()
@@ -1512,7 +1530,7 @@ async def get_zone(zone_id: str, db: AsyncSession = Depends()):
 async def update_zone(
     zone_id: str,
     data: ZoneUpdate,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.OPERATOR)),
 ):
     """Update a zone configuration."""
@@ -1533,7 +1551,7 @@ async def update_zone(
 @router.delete("/zones/{zone_id}", tags=["Zones"])
 async def delete_zone(
     zone_id: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """Delete a zone."""
@@ -1549,7 +1567,7 @@ async def delete_zone(
 @router.get("/zones/{zone_id}/occupancy", tags=["Zones"])
 async def zone_occupancy(
     zone_id: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get current track count in a zone (from active tracks)."""
     zone_result = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == zone_id))
@@ -1593,7 +1611,7 @@ class RelationshipCreate(BaseModel):
 @router.post("/graph/relationships", tags=["Knowledge Graph"])
 async def create_relationship(
     data: RelationshipCreate,
-    db: AsyncSession = Depends()
+    db: AsyncSession = Depends(get_db)
 ):
     """Create an entity relationship edge."""
     rel = EntityRelationship(
@@ -1619,7 +1637,7 @@ async def create_relationship(
 
 @router.get("/graph/relationships", tags=["Knowledge Graph"])
 async def list_relationships(
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     source_type: Optional[str] = None,
     source_id: Optional[str] = None,
     target_type: Optional[str] = None,
@@ -1659,7 +1677,7 @@ async def list_relationships(
 async def get_entity_links(
     entity_type: str,
     entity_id: str,
-    db: AsyncSession = Depends(),
+    db: AsyncSession = Depends(get_db),
     relation_type: Optional[str] = None,
     limit: int = 100,
 ):
@@ -1708,7 +1726,7 @@ async def get_entity_links(
 
 
 @router.get("/graph/stats", tags=["Knowledge Graph"])
-async def graph_stats(db: AsyncSession = Depends()):
+async def graph_stats(db: AsyncSession = Depends(get_db)):
     """Return knowledge graph statistics."""
     total = await db.execute(select(func.count(EntityRelationship.id)))
     total_count = total.scalar() or 0
