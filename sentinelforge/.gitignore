@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.env
+.env
+.env.local
+.cache/
+.venv/
+venv/
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store
+node_modules/
+.pytest_cache/
+coverage.xml
+htmlcov/
+*.log
+
+# Analytics models (too large for git)
+analytics/models/*.joblib
+analytics/models/*.pkl
+analytics/models/*.h5
+
+# Test datasets
+datasets/
+*.csv
+*.parquet
