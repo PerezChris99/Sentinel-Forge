@@ -1,28 +1,34 @@
-__pycache__/
-*.py[cod]
-*.env
-.env
-.env.local
-.cache/
+# Virtual environments
+env/
 .venv/
 venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
 build/
 dist/
+
+# Environment files
+.env
+.env.local
+*.env
+
+# IDE
 .idea/
 .vscode/
 .DS_Store
-node_modules/
-.pytest_cache/
-coverage.xml
-htmlcov/
+
+# Logs
 *.log
 
-# Analytics models (too large for git)
-analytics/models/*.joblib
-analytics/models/*.pkl
-analytics/models/*.h5
+# OS
+Thumbs.db
 
-# Test datasets
-datasets/
-*.csv
-*.parquet
+# Large model files
+*.joblib
+*.pkl
+*.h5
+*.whl
