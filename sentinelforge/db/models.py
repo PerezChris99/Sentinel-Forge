@@ -341,3 +341,21 @@ class ZoneRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     extra_metadata = Column(JSON)
 
+
+# ===== ENTITY RELATIONSHIP TABLE (Knowledge Graph) =====
+
+class EntityRelationship(Base):
+    """Stores typed edges between any two entities for knowledge graph analysis."""
+
+    __tablename__ = "entity_relationships"
+
+    id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_type = Column(String(50), nullable=False, index=True)
+    source_id = Column(String(255), nullable=False, index=True)
+    target_type = Column(String(50), nullable=False, index=True)
+    target_id = Column(String(255), nullable=False, index=True)
+    relation_type = Column(String(50), nullable=False, index=True)
+    weight = Column(Float, default=1.0)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    properties = Column(JSON)
+

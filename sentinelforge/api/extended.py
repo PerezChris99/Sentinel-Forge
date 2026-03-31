@@ -17,7 +17,7 @@ from db.models import (
     User, UserRole, Camera, CameraStatus, Alert, AlertStatus,
     Incident, IncidentStatus, IncidentEvent, Person, Sighting,
     AuditLog, SearchQuery, DetectedObject, Track,
-    BehaviorEventRecord, Vehicle, ZoneRecord
+    BehaviorEventRecord, Vehicle, ZoneRecord, EntityRelationship
 )
 from api.auth import (
     get_current_user, require_role, get_password_hash,
@@ -1575,4 +1575,162 @@ async def zone_occupancy(
         "name": zone.name,
         "occupancy": count,
         "max_crowd": zone.max_crowd,
+    }
+
+
+# ===== KNOWLEDGE GRAPH =====
+
+class RelationshipCreate(BaseModel):
+    source_type: str
+    source_id: str
+    target_type: str
+    target_id: str
+    relation_type: str
+    weight: float = 1.0
+    properties: Optional[dict] = None
+
+
+@router.post("/graph/relationships", tags=["Knowledge Graph"])
+async def create_relationship(
+    data: RelationshipCreate,
+    db: AsyncSession = Depends()
+):
+    """Create an entity relationship edge."""
+    rel = EntityRelationship(
+        source_type=data.source_type,
+        source_id=data.source_id,
+        target_type=data.target_type,
+        target_id=data.target_id,
+        relation_type=data.relation_type,
+        weight=data.weight,
+        timestamp=datetime.utcnow(),
+        properties=data.properties,
+    )
+    db.add(rel)
+    await db.commit()
+    await db.refresh(rel)
+    return {
+        "id": str(rel.id),
+        "source": f"{rel.source_type}:{rel.source_id}",
+        "target": f"{rel.target_type}:{rel.target_id}",
+        "relation_type": rel.relation_type,
+    }
+
+
+@router.get("/graph/relationships", tags=["Knowledge Graph"])
+async def list_relationships(
+    db: AsyncSession = Depends(),
+    source_type: Optional[str] = None,
+    source_id: Optional[str] = None,
+    target_type: Optional[str] = None,
+    relation_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List entity relationships with optional filters."""
+    query = select(EntityRelationship).order_by(EntityRelationship.timestamp.desc())
+    if source_type:
+        query = query.where(EntityRelationship.source_type == source_type)
+    if source_id:
+        query = query.where(EntityRelationship.source_id == source_id)
+    if target_type:
+        query = query.where(EntityRelationship.target_type == target_type)
+    if relation_type:
+        query = query.where(EntityRelationship.relation_type == relation_type)
+    query = query.offset(offset).limit(limit)
+
+    result = await db.execute(query)
+    rels = result.scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "source": f"{r.source_type}:{r.source_id}",
+            "target": f"{r.target_type}:{r.target_id}",
+            "relation_type": r.relation_type,
+            "weight": r.weight,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "properties": r.properties,
+        }
+        for r in rels
+    ]
+
+
+@router.get("/graph/entity/{entity_type}/{entity_id}/links", tags=["Knowledge Graph"])
+async def get_entity_links(
+    entity_type: str,
+    entity_id: str,
+    db: AsyncSession = Depends(),
+    relation_type: Optional[str] = None,
+    limit: int = 100,
+):
+    """Get all relationships for a specific entity (both directions)."""
+    outgoing_q = select(EntityRelationship).where(
+        EntityRelationship.source_type == entity_type,
+        EntityRelationship.source_id == entity_id,
+    )
+    incoming_q = select(EntityRelationship).where(
+        EntityRelationship.target_type == entity_type,
+        EntityRelationship.target_id == entity_id,
+    )
+    if relation_type:
+        outgoing_q = outgoing_q.where(EntityRelationship.relation_type == relation_type)
+        incoming_q = incoming_q.where(EntityRelationship.relation_type == relation_type)
+
+    outgoing_q = outgoing_q.limit(limit)
+    incoming_q = incoming_q.limit(limit)
+
+    out_result = await db.execute(outgoing_q)
+    in_result = await db.execute(incoming_q)
+
+    outgoing = out_result.scalars().all()
+    incoming = in_result.scalars().all()
+
+    return {
+        "entity": f"{entity_type}:{entity_id}",
+        "outgoing": [
+            {
+                "target": f"{r.target_type}:{r.target_id}",
+                "relation_type": r.relation_type,
+                "weight": r.weight,
+            }
+            for r in outgoing
+        ],
+        "incoming": [
+            {
+                "source": f"{r.source_type}:{r.source_id}",
+                "relation_type": r.relation_type,
+                "weight": r.weight,
+            }
+            for r in incoming
+        ],
+        "total_links": len(outgoing) + len(incoming),
+    }
+
+
+@router.get("/graph/stats", tags=["Knowledge Graph"])
+async def graph_stats(db: AsyncSession = Depends()):
+    """Return knowledge graph statistics."""
+    total = await db.execute(select(func.count(EntityRelationship.id)))
+    total_count = total.scalar() or 0
+
+    type_counts = await db.execute(
+        select(
+            EntityRelationship.relation_type,
+            func.count(EntityRelationship.id),
+        ).group_by(EntityRelationship.relation_type)
+    )
+    by_type = {r[0]: r[1] for r in type_counts.all()}
+
+    entity_counts = await db.execute(
+        select(
+            EntityRelationship.source_type,
+            func.count(func.distinct(EntityRelationship.source_id)),
+        ).group_by(EntityRelationship.source_type)
+    )
+    by_entity = {r[0]: r[1] for r in entity_counts.all()}
+
+    return {
+        "total_relationships": total_count,
+        "by_relation_type": by_type,
+        "unique_entities_by_type": by_entity,
     }
