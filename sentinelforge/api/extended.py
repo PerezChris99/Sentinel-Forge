@@ -8,6 +8,8 @@ import base64
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from pydantic import BaseModel, Field, EmailStr
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +21,7 @@ except ImportError:
     _HAS_FACE_RECOGNITION = False
 
 from db.models import (
-    User, UserRole, Camera, CameraStatus, Alert, AlertStatus,
+    User, UserRole, Camera, CameraStatus, CameraType, Alert, AlertStatus,
     Incident, IncidentStatus, IncidentEvent, Person, Sighting,
     AuditLog, SearchQuery, DetectedObject, Track,
     BehaviorEventRecord, Vehicle, ZoneRecord, EntityRelationship
@@ -46,6 +48,9 @@ async def get_db():
 # Router
 router = APIRouter()
 
+# Rate limiter for auth endpoints (brute-force protection)
+limiter = Limiter(key_func=get_remote_address)
+
 
 # ===== AUTHENTICATION ENDPOINTS =====
 
@@ -69,7 +74,8 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/auth/register", response_model=TokenResponse, tags=["Authentication"])
-async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register(request: Request, user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register a new user"""
     # Check if username/email exists
     result = await db.execute(
@@ -116,7 +122,8 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
-async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     """Login user and return JWT token"""
     result = await db.execute(
         select(User).where(User.username == credentials.username)
@@ -172,7 +179,8 @@ async def get_me(user: dict = Depends(get_current_user)):
 class CameraCreate(BaseModel):
     name: str
     camera_id: str
-    stream_url: str  # IP Webcam URL
+    stream_url: str  # IP Webcam URL / RTSP / device index
+    camera_type: Optional[str] = None  # ip_webcam, rtsp, usb, file, http — auto-detected if omitted
     location: Optional[str] = None
     zone: Optional[str] = None
     extra_metadata: Optional[dict] = {}
@@ -181,6 +189,7 @@ class CameraCreate(BaseModel):
 class CameraUpdate(BaseModel):
     name: Optional[str] = None
     stream_url: Optional[str] = None
+    camera_type: Optional[str] = None
     location: Optional[str] = None
     zone: Optional[str] = None
     is_enabled: Optional[bool] = None
@@ -202,10 +211,31 @@ async def create_camera(
             detail="Camera ID already exists"
         )
     
+    from detection.sources import detect_camera_type, validate_stream_url, CameraType as SourceCameraType
+
+    # Validate stream URL
+    is_valid, reason = validate_stream_url(camera_data.stream_url)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=f"Invalid stream URL: {reason}")
+
+    # Auto-detect camera type if not provided
+    cam_type_str = camera_data.camera_type
+    if not cam_type_str:
+        cam_type_str = detect_camera_type(camera_data.stream_url).value
+
+    # Derive snapshot URL for IP Webcam Pro
+    snapshot_url = None
+    if cam_type_str == "ip_webcam":
+        from urllib.parse import urlparse
+        parsed = urlparse(camera_data.stream_url)
+        snapshot_url = f"{parsed.scheme}://{parsed.netloc}/shot.jpg"
+
     camera = Camera(
         name=camera_data.name,
         camera_id=camera_data.camera_id,
+        camera_type=CameraType(cam_type_str),
         stream_url=camera_data.stream_url,
+        snapshot_url=snapshot_url,
         location=camera_data.location,
         zone=camera_data.zone,
         status=CameraStatus.OFFLINE,
@@ -222,6 +252,7 @@ async def create_camera(
         "id": str(camera.id),
         "name": camera.name,
         "camera_id": camera.camera_id,
+        "camera_type": camera.camera_type.value,
         "stream_url": camera.stream_url,
         "location": camera.location,
         "zone": camera.zone,
@@ -248,6 +279,7 @@ async def list_cameras(
             "id": str(c.id),
             "name": c.name,
             "camera_id": c.camera_id,
+            "camera_type": c.camera_type.value if c.camera_type else "ip_webcam",
             "stream_url": c.stream_url,
             "location": c.location,
             "zone": c.zone,
@@ -272,7 +304,9 @@ async def get_camera(camera_id: str, db: AsyncSession = Depends(get_db)):
         "id": str(camera.id),
         "name": camera.name,
         "camera_id": camera.camera_id,
+        "camera_type": camera.camera_type.value if camera.camera_type else "ip_webcam",
         "stream_url": camera.stream_url,
+        "snapshot_url": camera.snapshot_url,
         "location": camera.location,
         "zone": camera.zone,
         "status": camera.status.value,
@@ -301,7 +335,13 @@ async def update_camera(
     if camera_data.name is not None:
         camera.name = camera_data.name
     if camera_data.stream_url is not None:
+        from detection.sources import validate_stream_url
+        is_valid, reason = validate_stream_url(camera_data.stream_url)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid stream URL: {reason}")
         camera.stream_url = camera_data.stream_url
+    if camera_data.camera_type is not None:
+        camera.camera_type = CameraType(camera_data.camera_type)
     if camera_data.location is not None:
         camera.location = camera_data.location
     if camera_data.zone is not None:
@@ -349,6 +389,87 @@ async def camera_heartbeat(camera_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return {"status": "ok", "last_seen": camera.last_seen.isoformat()}
+
+
+@router.post("/cameras/{camera_id}/test", tags=["Cameras"])
+async def test_camera_connection(
+    camera_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Test camera stream connectivity and return health status."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
+    camera = result.scalar_one_or_none()
+
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    from detection.sources import create_source
+    source = create_source(
+        camera.stream_url,
+        camera.camera_id,
+        camera.camera_type.value if camera.camera_type else None,
+    )
+
+    # Run blocking health_check in thread pool with timeout
+    loop = asyncio.get_event_loop()
+    try:
+        health = await asyncio.wait_for(
+            loop.run_in_executor(None, source.health_check),
+            timeout=10.0,
+        )
+    except asyncio.TimeoutError:
+        health = {"status": "error", "detail": "Connection timed out (10s)", "latency_ms": 10000}
+    finally:
+        source.release()
+
+    # Update camera status based on health check
+    if health["status"] == "online":
+        camera.status = CameraStatus.ONLINE
+        camera.last_seen = datetime.utcnow()
+    else:
+        camera.status = CameraStatus.ERROR
+    await db.commit()
+
+    return {
+        "camera_id": camera_id,
+        "camera_type": camera.camera_type.value if camera.camera_type else "unknown",
+        **health,
+    }
+
+
+@router.get("/cameras/{camera_id}/snapshot", tags=["Cameras"])
+async def get_camera_snapshot(
+    camera_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """Grab a single JPEG snapshot from the camera."""
+    result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
+    camera = result.scalar_one_or_none()
+
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    from detection.sources import create_source
+    import cv2
+    source = create_source(
+        camera.stream_url,
+        camera.camera_id,
+        camera.camera_type.value if camera.camera_type else None,
+    )
+    frame = source.get_snapshot()
+    source.release()
+
+    if frame is None:
+        raise HTTPException(status_code=503, detail="Failed to capture snapshot")
+
+    _, buffer = cv2.imencode(".jpg", frame)
+    from fastapi.responses import Response
+    return Response(content=buffer.tobytes(), media_type="image/jpeg")
 
 
 # ===== PERSON MANAGEMENT ENDPOINTS =====

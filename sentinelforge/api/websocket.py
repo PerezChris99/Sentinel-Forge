@@ -11,10 +11,17 @@ import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
 
+# Resolve allowed origins for Socket.IO
+_cors_env = os.getenv("CORS_ORIGINS", "*")
+if _cors_env.strip() == "*":
+    _ws_cors = '*'
+else:
+    _ws_cors = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 # Create Socket.IO server with CORS
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*',  # Restrict in production
+    cors_allowed_origins=_ws_cors,
     logger=True,
     engineio_logger=True
 )
@@ -57,12 +64,12 @@ class WebSocketManager:
     async def broadcast_behavior_event(self, event_data: dict):
         """Broadcast behavior analysis event (loitering, intrusion, etc.)"""
         await self.sio.emit('behavior_event', event_data)
-        LOGGER.info("Broadcasted behavior event: %s", event_data.get('behavior_type'))
+        logger.info("Broadcasted behavior event: %s", event_data.get('behavior_type'))
 
     async def broadcast_vehicle_alert(self, vehicle_data: dict):
         """Broadcast vehicle intelligence alert (plate match, stolen, etc.)"""
         await self.sio.emit('vehicle_alert', vehicle_data)
-        LOGGER.info("Broadcasted vehicle alert: %s", vehicle_data.get('plate_text'))
+        logger.info("Broadcasted vehicle alert: %s", vehicle_data.get('plate_text'))
 
     async def broadcast_zone_update(self, zone_data: dict):
         """Broadcast zone occupancy or status change"""

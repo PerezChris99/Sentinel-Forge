@@ -68,6 +68,14 @@ class UserRole(enum.Enum):
     VIEWER = "viewer"
 
 
+class CameraType(enum.Enum):
+    IP_WEBCAM = "ip_webcam"
+    RTSP = "rtsp"
+    USB = "usb"
+    FILE = "file"
+    HTTP = "http"
+
+
 class CameraStatus(enum.Enum):
     ONLINE = "online"
     OFFLINE = "offline"
@@ -181,7 +189,9 @@ class Camera(Base):
     id = Column(PortableUUID(), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False)
     camera_id = Column(String(100), unique=True, nullable=False, index=True)
-    stream_url = Column(String(500), nullable=False)  # IP Webcam URL
+    camera_type = Column(SQLEnum(CameraType), default=CameraType.IP_WEBCAM, nullable=False)
+    stream_url = Column(String(500), nullable=False)  # IP Webcam URL / RTSP / device index
+    snapshot_url = Column(String(500))  # Optional snapshot endpoint (auto-derived for IP Webcam)
     location = Column(String(255))
     zone = Column(String(100))
     status = Column(SQLEnum(CameraStatus), default=CameraStatus.OFFLINE, nullable=False)

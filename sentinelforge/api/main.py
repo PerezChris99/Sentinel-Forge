@@ -3,6 +3,7 @@ FastAPI main application for SentinelForge.
 Phase 3: Logging & Storage Layer with security, privacy, and ALFIE integration.
 """
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import redis.asyncio as redis
 from cryptography.fernet import Fernet
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +22,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from db.models import Base, Sighting, Person
 
@@ -32,6 +34,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
 FERNET_KEY = os.getenv("FERNET_KEY", Fernet.generate_key().decode())
+
+# CORS: configurable via environment
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")  # Comma-separated origins or "*"
 
 # Auto-detect DB: try PostgreSQL, fall back to SQLite for dev mode
 _pg_url = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
@@ -116,6 +121,16 @@ class ALFIEQuery(BaseModel):
 async def lifespan(app: FastAPI):
     global redis_client
 
+    # Security warnings for default secrets
+    if SECRET_KEY in ("changeme-super-secret", "changeme-super-secret-key"):
+        if DEV_MODE:
+            print("⚠ Using default SECRET_KEY (acceptable for dev mode)")
+        else:
+            print("🚨 CRITICAL: Default SECRET_KEY detected in production! Set SECRET_KEY env var.")
+
+    if CORS_ORIGINS.strip() == "*" and not DEV_MODE:
+        print("⚠ CORS allows all origins. Set CORS_ORIGINS env var for production.")
+
     # In dev mode, auto-create all tables
     if DEV_MODE:
         async with engine.begin() as conn:
@@ -145,24 +160,58 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Resolve CORS origins
+if CORS_ORIGINS.strip() == "*":
+    _allowed_origins = ["*"]
+else:
+    _allowed_origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if not DEV_MODE:
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io 'unsafe-inline'; "
+                "style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; "
+                "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+                "img-src 'self' data: blob: http: https:; "
+                "connect-src 'self' ws: wss: http: https:"
+            )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Auth
 security = HTTPBearer()
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Simple JWT verification (stub - expand with proper validation)."""
+    """JWT verification with issuer/audience validation."""
     token = credentials.credentials
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=["HS256"],
+            audience="sentinelforge-api", issuer="sentinelforge"
+        )
         return payload
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

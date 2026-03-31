@@ -230,59 +230,55 @@ class StreamProcessor:
         self.running = False
         self.queue = Queue()
 
-    def start_stream(self, stream_url: str, camera_id: str):
-        """Start a thread to process a specific stream."""
+    def start_stream(self, stream_url: str, camera_id: str, camera_type: str = None):
+        """Start a thread to process a specific stream using CameraSource abstraction."""
+        from detection.sources import create_source
+        source = create_source(stream_url, camera_id, camera_type)
         self.running = True
-        t = threading.Thread(target=self._capture_loop, args=(stream_url, camera_id))
+        t = threading.Thread(target=self._capture_loop, args=(source,))
         t.daemon = True
         t.start()
 
-    def _capture_loop(self, stream_url: str, camera_id: str):
-        LOGGER.info(f"Starting capture for {camera_id}")
-        cap = cv2.VideoCapture(stream_url)
-        
-        # Retry logic
+    def _capture_loop(self, source):
+        camera_id = source.camera_id
+        LOGGER.info("Starting capture for %s (%s)", camera_id, type(source).__name__)
+
+        if not source.open():
+            LOGGER.error("Failed to open source for %s", camera_id)
+            return
+
         retry_count = 0
-        max_retries = 3
-        
+        max_retries = 5
+
         while self.running:
-            if not cap.isOpened():
+            if not source.is_opened():
                 if retry_count < max_retries:
-                    LOGGER.warning(f"Stream {camera_id} closed. Retrying...")
-                    time.sleep(2)
-                    cap.open(stream_url)
+                    LOGGER.warning("Stream %s closed. Retrying (%d/%d)...", camera_id, retry_count + 1, max_retries)
+                    time.sleep(2 ** min(retry_count, 4))
+                    source.open()
                     retry_count += 1
                     continue
                 else:
-                    LOGGER.error(f"Stream {camera_id} failed permanently.")
+                    LOGGER.error("Stream %s failed permanently after %d retries.", camera_id, max_retries)
                     break
 
-            ret, frame = cap.read()
-            if not ret:
-                LOGGER.warning(f"Failed to read frame from {camera_id}")
+            ret, frame = source.read()
+            if not ret or frame is None:
+                LOGGER.warning("Failed to read frame from %s", camera_id)
                 retry_count += 1
                 time.sleep(1)
                 continue
-            
-            retry_count = 0 # Reset on success
 
-            # Process every 5th frame for performance (simple rate limiting)
-            # In a real loop we'd use a counter, but for simplicity here we just process.
-            # To strictly follow "batch every 5 frames", we can skip reads or just process.
-            # Let's implement a simple skip.
-            # Note: cap.read() advances the stream, so we just process occasionally.
-            
-            # For this implementation, we'll process continuously but the caller 
-            # might want to throttle.
-            
+            retry_count = 0
+
             try:
                 events = self.engine.detect_and_process(frame, camera_id)
                 for event in events:
                     self.queue.put(event)
             except Exception as e:
-                LOGGER.error(f"Error processing frame from {camera_id}: {e}")
+                LOGGER.error("Error processing frame from %s: %s", camera_id, e)
 
-        cap.release()
+        source.release()
 
     def get_events(self):
         """Generator to yield events from the queue."""
