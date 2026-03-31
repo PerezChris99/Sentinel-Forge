@@ -6,6 +6,14 @@ const REFRESH_INTERVAL = 5000; // 5 seconds
 let refreshTimer = null;
 let cameraChart = null;
 
+// Dark theme chart defaults
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(99, 102, 241, 0.1)';
+Chart.defaults.plugins.legend.labels.color = '#94a3b8';
+
+// Accent palette for charts
+const SF_CHART_COLORS = ['#6366f1', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6'];
+
 // Utility Functions
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
@@ -217,7 +225,7 @@ async function renderSeverityChart() {
             labels: ['Normal', 'Flagged', 'Repeat', 'Crit'],
             datasets: [{
                 data: chartData,
-                backgroundColor: ['#ecf0f1', '#f39c12', '#e67e22', '#c0392b'],
+                backgroundColor: ['#334155', '#f59e0b', '#f97316', '#ef4444'],
                 borderWidth: 0
             }]
         },
@@ -225,7 +233,7 @@ async function renderSeverityChart() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } }
+                legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 }, color: '#94a3b8' } }
             },
             cutout: '70%'
         }
@@ -248,8 +256,9 @@ async function renderCameraVolumeChart() {
             datasets: [{
                 label: 'Sightings',
                 data: values,
-                backgroundColor: '#34495e',
-                borderRadius: 2
+                backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                hoverBackgroundColor: 'rgba(99, 102, 241, 0.9)',
+                borderRadius: 4
             }]
         },
         options: {
@@ -257,7 +266,7 @@ async function renderCameraVolumeChart() {
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                x: { ticks: { font: { size: 8 } }, grid: { display: false } },
+                x: { ticks: { font: { size: 8 }, color: '#64748b' }, grid: { display: false } },
                 y: { display: false, grid: { display: false } }
             }
         }
@@ -284,12 +293,13 @@ function renderCameraChart(data) {
             datasets: datasets.map((ds, idx) => ({
                 label: ds.camera_id,
                 data: ds.data,
-                borderColor: idx === 0 ? '#1a1a1a' : '#4a4a4a',
+                borderColor: SF_CHART_COLORS[idx % SF_CHART_COLORS.length],
                 backgroundColor: 'transparent',
                 borderWidth: 2,
-                tension: 0.3,
-                pointRadius: 3,
-                pointHoverRadius: 5
+                tension: 0.4,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+                pointBackgroundColor: SF_CHART_COLORS[idx % SF_CHART_COLORS.length]
             }))
         },
         options: {
@@ -327,8 +337,8 @@ async function loadPersons() {
 
     const html = persons.map(person => `
         <div class="gallery-item" onclick="viewPerson('${person.id}')">
-            <div class="gallery-img" style="background: var(--paper-cream); display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 3rem; color: var(--ink-gray);">👤</span>
+            <div class="gallery-img" style="background: var(--sf-bg-primary); display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 3rem; color: var(--sf-text-muted);">👤</span>
             </div>
             <div class="gallery-info">
                 <div class="gallery-title">${person.name || 'Unknown'}</div>
@@ -367,8 +377,8 @@ async function loadUnknowns() {
 
     const html = unknowns.map(unknown => `
         <div class="gallery-item">
-            <div class="gallery-img" style="background: var(--paper-cream); display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 3rem; color: var(--ink-gray);">❓</span>
+            <div class="gallery-img" style="background: var(--sf-bg-primary); display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 3rem; color: var(--sf-text-muted);">❓</span>
             </div>
             <div class="gallery-info">
                 <div class="gallery-title">Unknown</div>
@@ -422,7 +432,7 @@ async function generateReport() {
     if (!reportData.events || reportData.events.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="text-center" style="padding: 2rem; color: var(--ink-gray);">
+                <td colspan="6" class="text-center" style="padding: 2rem; color: var(--sf-text-muted);">
                     No events found in selected date range
                 </td>
             </tr>

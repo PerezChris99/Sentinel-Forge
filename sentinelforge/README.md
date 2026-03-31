@@ -3,13 +3,25 @@
 **Advanced CCTV Intelligence Platform with Real-Time Analytics & Face Recognition**
 
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.112%2B-009688)
+![Python](https://img.shields.io/badge/Python-3.13%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791)
+![SQLite](https://img.shields.io/badge/SQLite-Dev%20Mode-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Palantir Parity](https://img.shields.io/badge/Palantir%20Parity-64%25-yellow)
 
 SentinelForge is a comprehensive security platform combining OpenCV-powered face detection, real-time WebSocket notifications, role-based access control, and live IP camera streaming. The system provides complete incident management, alert workflows, and advanced pattern analytics for enterprise security operations.
+
+### Zero-Config Dev Mode
+
+SentinelForge now runs **out of the box** — no PostgreSQL or Redis required for development. The system auto-detects available services and falls back to SQLite + in-memory defaults, making it trivial to get started:
+
+```powershell
+cd sentinelforge
+pip install -e ".[backend,cv,analytics]"
+uvicorn api.main:app --reload --port 8000
+# That's it. Open http://localhost:8000/dashboard/index.html
+```
 
 ---
 
@@ -252,7 +264,29 @@ Palantir's **AIP (Artificial Intelligence Platform)** and **Gotham** represent t
 
 ## 📅 Latest Updates (March 2026)
 
-### 🆕 Recently Implemented (This Sprint)
+### 🔧 Production-Ready Dev Mode (Latest)
+
+| Change | Details |
+|--------|---------|
+| **SQLite Auto-Fallback** | `_build_engine()` tests PostgreSQL socket; if unavailable, uses SQLite + aiosqlite seamlessly |
+| **PortableUUID** | Custom TypeDecorator — native UUID on PG, CHAR(36) on SQLite |
+| **VectorColumn** | pgvector `Vector(N)` on PG, `Text` column on SQLite with JSON serialization |
+| **bcrypt Direct** | Replaced passlib (broken on Python 3.13) with direct bcrypt library calls |
+| **JWT RBAC Fix** | Token payload now includes `role` claim for proper role-based access control |
+| **Dependency Injection** | Fixed 48 bare `Depends()` → `Depends(get_db)` with `_real_get_db` delegation |
+| **Optional Dependencies** | `face_recognition`, `ultralytics`, `redis` all gracefully guarded |
+| **12/12 Smoke Tests** | All API endpoints verified: health, auth, cameras, persons, detections, alerts |
+
+### 🆕 Phase 6: Knowledge Graph Engine
+
+| Feature | File(s) | Description |
+|---------|---------|-------------|
+| **Knowledge Graph Engine** | `analytics/knowledge_graph.py` | Entity graph with BFS, components, temporal correlations, link strength |
+| **EntityRelationship Model** | `db/models.py` | Persistent edge storage with source/target type+ID, weight, properties |
+| **Knowledge Graph API** | `api/extended.py` | `/api/graph/relationships`, `/api/graph/entity/{type}/{id}/links`, `/api/graph/stats` |
+| **Test Suite** | `tests/test_knowledge_graph.py` | 25+ tests for all graph operations |
+
+### 🆕 Phases 2–5 Implementation
 
 | Feature | File(s) | Description |
 |---------|---------|-------------|
@@ -329,17 +363,32 @@ sentinelforge/
 
 ##  Quick Start
 
-### Prerequisites
-- Python 3.11+
+### Option A: Zero-Config Dev Mode (Recommended for Getting Started)
+
+```powershell
+cd sentinelforge
+pip install -e ".[backend,cv,analytics]"
+uvicorn api.main:app --reload --port 8000
+```
+
+The server auto-detects PostgreSQL availability. If not found, it uses **SQLite** (`sentinelforge_dev.db`) with all features intact. Redis is optional — WebSocket notifications work without it.
+
+**Dashboard:** http://localhost:8000/dashboard/index.html
+**API Docs:** http://localhost:8000/docs
+
+### Option B: Full Production Stack
+
+#### Prerequisites
+- Python 3.11+ (tested on 3.13)
 - PostgreSQL 15+ with TimescaleDB and pgvector extensions
 - Redis 6+
 - (Optional) `ultralytics` for YOLO detection
 - (Optional) Android device with IP Webcam Pro for live camera feeds
 
-### 1. Install Dependencies
+#### 1. Install Dependencies
 
 ```powershell
-cd "d:\NEW PROJECTS\Sentinel Forge\sentinelforge"
+cd sentinelforge
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[backend,cv,analytics]"
@@ -348,7 +397,7 @@ pip install -e ".[backend,cv,analytics]"
 pip install ultralytics
 ```
 
-### 2. Database Setup
+#### 2. Database Setup
 
 ```powershell
 # Create database
@@ -364,7 +413,7 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 alembic upgrade head
 ```
 
-### 3. Configure Environment
+#### 3. Configure Environment
 
 Create `.env` file:
 
@@ -375,7 +424,7 @@ REDIS_URL=redis://localhost:6379/0
 FERNET_KEY=generate-with-cryptography-fernet
 ```
 
-### 4. Start Services
+#### 4. Start Services
 
 ```powershell
 # Terminal 1: Redis
@@ -388,7 +437,7 @@ uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 celery -A api.celery_app worker --loglevel=info
 ```
 
-### 5. Access Dashboard
+#### 5. Access Dashboard
 
 Open browser: **http://localhost:8000/dashboard/index.html**
 
@@ -489,13 +538,14 @@ pytest tests/test_detection_pipeline.py -v
 ##  Technology Stack
 
 **Backend:**
-- FastAPI 0.112+ (async REST API)
+- FastAPI 0.115+ (async REST API)
 - Python-SocketIO (WebSocket server)
 - SQLAlchemy 2.0+ (ORM with asyncio)
-- PostgreSQL 15+ (database)
+- PostgreSQL 15+ (production database)
+- SQLite + aiosqlite (zero-config dev mode)
 - TimescaleDB (time-series optimization)
-- pgvector (vector similarity search)
-- Redis 6+ (caching & Celery broker)
+- pgvector / PortableUUID (vector similarity, cross-DB UUID)
+- Redis 6+ (optional — caching & Celery broker)
 - Celery 5.4+ (background tasks)
 
 **Computer Vision:**
@@ -507,7 +557,7 @@ pytest tests/test_detection_pipeline.py -v
 
 **Security:**
 - PyJWT 2.8+ (JWT tokens)
-- passlib + bcrypt (password hashing)
+- bcrypt 5.0 (password hashing — Python 3.13 compatible)
 - Fernet encryption (embeddings)
 - SlowAPI (rate limiting)
 

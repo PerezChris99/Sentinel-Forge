@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SentinelForge - Security Dashboard</title>
+    <title>SentinelForge - Security Command Center</title>
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -12,39 +12,52 @@
     <link rel="stylesheet" href="assets/custom.css">
     
     <!-- Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 </head>
 <body>
     <!-- Header -->
-    <header>
+    <header class="sf-header">
         <div class="header-content">
-            <div class="logo">SENTINELFORGE</div>
+            <div class="logo-group">
+                <div class="logo-icon"><i class="bi bi-shield-lock-fill"></i></div>
+                <div class="logo">SENTINEL<span class="logo-accent">FORGE</span></div>
+            </div>
             <div class="header-stats">
                 <div class="stat-item">
                     <span class="stat-label">Total Persons</span>
                     <span class="stat-value" id="total-persons">—</span>
                 </div>
+                <div class="stat-divider"></div>
                 <div class="stat-item">
-                    <span class="stat-label">Today</span>
+                    <span class="stat-label">Today's Activity</span>
                     <span class="stat-value" id="today-sightings">—</span>
                 </div>
+                <div class="stat-divider"></div>
                 <div class="stat-item">
                     <span class="stat-label">Active Flags</span>
-                    <span class="stat-value" id="active-flags">—</span>
+                    <span class="stat-value text-danger-glow" id="active-flags">—</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span class="stat-label">LIVE</span>
                 </div>
             </div>
         </div>
     </header>
 
     <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-        <button class="nav-tab active" data-tab="overview">Overview</button>
-        <button class="nav-tab" data-tab="cameras">Cameras</button>
-        <button class="nav-tab" data-tab="persons">Persons</button>
-        <button class="nav-tab" data-tab="unknowns">Unknowns</button>
-        <button class="nav-tab" data-tab="alerts">Alerts</button>
-        <button class="nav-tab" data-tab="incidents">Incidents</button>
-        <button class="nav-tab" data-tab="reports">Reports</button>
+    <nav class="sf-nav">
+        <button class="nav-tab active" data-tab="overview"><i class="bi bi-grid-1x2-fill"></i> Overview</button>
+        <button class="nav-tab" data-tab="cameras"><i class="bi bi-camera-video-fill"></i> Cameras</button>
+        <button class="nav-tab" data-tab="persons"><i class="bi bi-people-fill"></i> Persons</button>
+        <button class="nav-tab" data-tab="unknowns"><i class="bi bi-person-exclamation"></i> Unknowns</button>
+        <button class="nav-tab" data-tab="alerts"><i class="bi bi-bell-fill"></i> Alerts</button>
+        <button class="nav-tab" data-tab="incidents"><i class="bi bi-exclamation-triangle-fill"></i> Incidents</button>
+        <button class="nav-tab" data-tab="reports"><i class="bi bi-bar-chart-fill"></i> Reports</button>
     </nav>
 
     <!-- Main Content -->
@@ -55,65 +68,77 @@
             <div class="mosaic-grid">
                 
                 <!-- 1. KPIs (Top Bar) -->
-                <div class="mosaic-tile tile-kpi card">
+                <div class="mosaic-tile tile-kpi sf-card">
                     <div class="kpi-group">
                         <div class="kpi-item">
-                            <div class="kpi-label">Sightings</div>
-                            <div class="kpi-val" id="kpi-total-sightings">—</div>
+                            <div class="kpi-icon"><i class="bi bi-eye-fill"></i></div>
+                            <div>
+                                <div class="kpi-label">Sightings</div>
+                                <div class="kpi-val" id="kpi-total-sightings">—</div>
+                            </div>
                         </div>
                         <div class="kpi-divider"></div>
                         <div class="kpi-item">
-                            <div class="kpi-label">Known</div>
-                            <div class="kpi-val" id="kpi-known-persons">—</div>
+                            <div class="kpi-icon kpi-icon-success"><i class="bi bi-person-check-fill"></i></div>
+                            <div>
+                                <div class="kpi-label">Known</div>
+                                <div class="kpi-val" id="kpi-known-persons">—</div>
+                            </div>
                         </div>
                         <div class="kpi-divider"></div>
                         <div class="kpi-item">
-                            <div class="kpi-label">Unknowns</div>
-                            <div class="kpi-val" id="kpi-unknowns">—</div>
+                            <div class="kpi-icon kpi-icon-warning"><i class="bi bi-person-x-fill"></i></div>
+                            <div>
+                                <div class="kpi-label">Unknowns</div>
+                                <div class="kpi-val" id="kpi-unknowns">—</div>
+                            </div>
                         </div>
                         <div class="kpi-divider"></div>
                         <div class="kpi-item">
-                            <div class="kpi-label">Flagged</div>
-                            <div class="kpi-val" id="kpi-flagged-events">—</div>
+                            <div class="kpi-icon kpi-icon-danger"><i class="bi bi-flag-fill"></i></div>
+                            <div>
+                                <div class="kpi-label">Flagged</div>
+                                <div class="kpi-val" id="kpi-flagged-events">—</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 2. Main Chart (Activity) -->
-                <div class="mosaic-tile tile-main-chart card">
-                    <div class="tile-header">Activity (24h)</div>
+                <div class="mosaic-tile tile-main-chart sf-card">
+                    <div class="tile-header"><i class="bi bi-activity"></i> Activity (24h)</div>
                     <div class="chart-wrapper">
                         <canvas id="camera-activity-chart"></canvas>
                     </div>
                 </div>
 
                 <!-- 3. Recent Sightings List -->
-                <div class="mosaic-tile tile-list card">
-                    <div class="tile-header">Recent Sightings</div>
+                <div class="mosaic-tile tile-list sf-card">
+                    <div class="tile-header"><i class="bi bi-clock-history"></i> Recent Sightings</div>
                     <div id="recent-sightings-list" class="scroll-content">
                         <div class="loading-mini">Loading...</div>
                     </div>
                 </div>
 
                 <!-- 4. Severity Chart (Pie) -->
-                <div class="mosaic-tile tile-chart-1 card">
-                    <div class="tile-header">Severity</div>
+                <div class="mosaic-tile tile-chart-1 sf-card">
+                    <div class="tile-header"><i class="bi bi-speedometer2"></i> Severity</div>
                     <div class="chart-wrapper-mini">
                         <canvas id="severity-chart"></canvas>
                     </div>
                 </div>
 
                 <!-- 5. Top Cameras (Bar) -->
-                <div class="mosaic-tile tile-chart-2 card">
-                    <div class="tile-header">Top Cameras</div>
+                <div class="mosaic-tile tile-chart-2 sf-card">
+                    <div class="tile-header"><i class="bi bi-camera-video"></i> Top Cameras</div>
                     <div class="chart-wrapper-mini">
                         <canvas id="camera-volume-chart"></canvas>
                     </div>
                 </div>
 
                 <!-- 6. Alert Ticker -->
-                <div class="mosaic-tile tile-alerts card">
-                    <div class="tile-header">Live Alerts</div>
+                <div class="mosaic-tile tile-alerts sf-card">
+                    <div class="tile-header"><i class="bi bi-bell"></i> Live Alerts</div>
                     <div class="alert-ticker-compact" id="alert-ticker">
                         <p class="text-mini text-muted">No recent alerts</p>
                     </div>
@@ -125,8 +150,8 @@
         <!-- Cameras Tab -->
         <div class="tab-content" id="cameras-tab">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2>Camera Management</h2>
-                <button class="btn btn-primary" onclick="showAddCameraModal()">+ Add Camera</button>
+                <h2 class="tab-title"><i class="bi bi-camera-video-fill"></i> Camera Management</h2>
+                <button class="sf-btn sf-btn-primary" onclick="showAddCameraModal()"><i class="bi bi-plus-lg"></i> Add Camera</button>
             </div>
 
             <!-- Camera Grid -->
@@ -138,7 +163,7 @@
         <!-- Alerts Tab -->
         <div class="tab-content" id="alerts-tab">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2>Active Alerts</h2>
+                <h2 class="tab-title"><i class="bi bi-bell-fill"></i> Active Alerts</h2>
                 <div>
                     <select id="alert-severity-filter" class="form-select d-inline-block w-auto me-2">
                         <option value="">All Severities</option>
@@ -178,8 +203,8 @@
         <!-- Incidents Tab -->
         <div class="tab-content" id="incidents-tab">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2>Incident Management</h2>
-                <button class="btn btn-primary" onclick="showCreateIncidentModal()">+ Create Incident</button>
+                <h2 class="tab-title"><i class="bi bi-exclamation-triangle-fill"></i> Incident Management</h2>
+                <button class="sf-btn sf-btn-primary" onclick="showCreateIncidentModal()"><i class="bi bi-plus-lg"></i> Create Incident</button>
             </div>
 
             <div class="table-responsive">
@@ -223,9 +248,9 @@
 
         <!-- Unknowns Tab -->
         <div class="tab-content" id="unknowns-tab">
-            <div class="card">
-                <h3 class="card-title mb-3">Unknown Individuals (Past 90 Days)</h3>
-                <p style="color: var(--ink-gray); font-size: 0.9rem; margin-bottom: 1.5rem;">
+            <div class="sf-card sf-card-padded">
+                <h3 class="card-title mb-3"><i class="bi bi-person-exclamation"></i> Unknown Individuals (Past 90 Days)</h3>
+                <p class="text-muted-custom">
                     Unidentified faces detected by the system. Data automatically purged after 90 days per retention policy.
                 </p>
                 <div class="gallery" id="unknowns-gallery">
@@ -277,7 +302,7 @@
                     </thead>
                     <tbody id="report-table-body">
                         <tr>
-                            <td colspan="6" class="text-center" style="padding: 2rem; color: var(--ink-gray);">
+                            <td colspan="6" class="text-center" style="padding: 2rem; color: var(--sf-text-muted);">
                                 Select date range and click Generate Report
                             </td>
                         </tr>
