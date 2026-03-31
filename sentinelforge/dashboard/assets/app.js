@@ -6,13 +6,17 @@ const REFRESH_INTERVAL = 5000; // 5 seconds
 let refreshTimer = null;
 let cameraChart = null;
 
-// Dark theme chart defaults
-Chart.defaults.color = '#94a3b8';
-Chart.defaults.borderColor = 'rgba(99, 102, 241, 0.1)';
-Chart.defaults.plugins.legend.labels.color = '#94a3b8';
-
 // Accent palette for charts
 const SF_CHART_COLORS = ['#6366f1', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6'];
+
+// Dark theme chart defaults (applied after DOM ready so Chart.js registry is fully loaded)
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(99, 102, 241, 0.1)';
+        Chart.defaults.set('plugins.legend.labels', { color: '#94a3b8' });
+    }
+});
 
 // Utility Functions
 function formatTimestamp(timestamp) {
