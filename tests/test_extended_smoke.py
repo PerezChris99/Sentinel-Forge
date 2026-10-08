@@ -62,24 +62,24 @@ async def test_collection_read_endpoints_handle_empty_database():
     db = DB()
     assert await extended.list_cameras(db=db, user=USER) == []
     assert await extended.list_persons(db=db, user=USER) == []
-    assert await extended.list_alerts(db=db, user=USER) == []
-    assert await extended.list_incidents(db=db, user=USER) == []
+    assert await extended.list_alerts(db=db, limit=100, user=USER) == []
+    assert await extended.list_incidents(db=db, limit=50, user=USER) == []
     assert await extended.search_all("anything", db=db, user=USER) is not None
-    assert await extended.list_detections(db=db, user=USER) == []
-    assert await extended.list_tracks(db=db, user=USER) == []
-    assert await extended.list_behavior_events(db=db, user=USER) == []
-    assert await extended.list_vehicles(db=db, user=USER) == []
-    assert await extended.search_vehicle_by_plate("UAX", db=db, user=USER) == []
-    assert await extended.list_zones(db=db, user=USER) == []
-    assert await extended.list_relationships(db=db, user=USER) == []
+    assert await extended.list_detections(db=db, limit=100, offset=0, user=USER) == []
+    assert await extended.list_tracks(db=db, limit=100, offset=0, user=USER) == []
+    assert await extended.list_behavior_events(db=db, limit=100, offset=0, user=USER) == []
+    assert await extended.list_vehicles(db=db, limit=100, offset=0, user=USER) == []
+    assert await extended.search_vehicle_by_plate("UAX", db=db, limit=50, user=USER) == []
+    assert await extended.list_zones(db=db, limit=100, offset=0, user=USER) == []
+    assert await extended.list_relationships(db=db, limit=100, offset=0, user=USER) == []
 
 
 @pytest.mark.asyncio
 async def test_analytics_and_graph_empty_state_endpoints():
     db = DB()
-    behavior = await extended.behavior_stats(db=db)
+    behavior = await extended.behavior_stats(db=db, hours=24)
     graph = await extended.graph_stats(db=db, user=USER)
-    links = await extended.get_entity_links("person", "p1", db=db)
+    links = await extended.get_entity_links("person", "p1", db=db, limit=100)
     occupancy = await extended.zone_occupancy("zone-1", db=db)
     assert behavior is not None
     assert graph["total_relationships"] == 0
