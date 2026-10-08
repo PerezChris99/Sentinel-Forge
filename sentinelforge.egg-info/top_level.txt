@@ -1,4 +1,0 @@
-assets
-components
-models
-services

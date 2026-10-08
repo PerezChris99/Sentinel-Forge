@@ -230,59 +230,55 @@ class StreamProcessor:
         self.running = False
         self.queue = Queue()
 
-    def start_stream(self, stream_url: str, camera_id: str):
-        """Start a thread to process a specific stream."""
+    def start_stream(self, stream_url: str, camera_id: str, camera_type: str = None):
+        """Start a thread to process a specific stream using CameraSource abstraction."""
+        from detection.sources import create_source
+        source = create_source(stream_url, camera_id, camera_type)
         self.running = True
-        t = threading.Thread(target=self._capture_loop, args=(stream_url, camera_id))
+        t = threading.Thread(target=self._capture_loop, args=(source,))
         t.daemon = True
         t.start()
 
-    def _capture_loop(self, stream_url: str, camera_id: str):
-        LOGGER.info(f"Starting capture for {camera_id}")
-        cap = cv2.VideoCapture(stream_url)
-        
-        # Retry logic
+    def _capture_loop(self, source):
+        camera_id = source.camera_id
+        LOGGER.info("Starting capture for %s (%s)", camera_id, type(source).__name__)
+
+        if not source.open():
+            LOGGER.error("Failed to open source for %s", camera_id)
+            return
+
         retry_count = 0
-        max_retries = 3
-        
+        max_retries = 5
+
         while self.running:
-            if not cap.isOpened():
+            if not source.is_opened():
                 if retry_count < max_retries:
-                    LOGGER.warning(f"Stream {camera_id} closed. Retrying...")
-                    time.sleep(2)
-                    cap.open(stream_url)
+                    LOGGER.warning("Stream %s closed. Retrying (%d/%d)...", camera_id, retry_count + 1, max_retries)
+                    time.sleep(2 ** min(retry_count, 4))
+                    source.open()
                     retry_count += 1
                     continue
                 else:
-                    LOGGER.error(f"Stream {camera_id} failed permanently.")
+                    LOGGER.error("Stream %s failed permanently after %d retries.", camera_id, max_retries)
                     break
 
-            ret, frame = cap.read()
-            if not ret:
-                LOGGER.warning(f"Failed to read frame from {camera_id}")
+            ret, frame = source.read()
+            if not ret or frame is None:
+                LOGGER.warning("Failed to read frame from %s", camera_id)
                 retry_count += 1
                 time.sleep(1)
                 continue
-            
-            retry_count = 0 # Reset on success
 
-            # Process every 5th frame for performance (simple rate limiting)
-            # In a real loop we'd use a counter, but for simplicity here we just process.
-            # To strictly follow "batch every 5 frames", we can skip reads or just process.
-            # Let's implement a simple skip.
-            # Note: cap.read() advances the stream, so we just process occasionally.
-            
-            # For this implementation, we'll process continuously but the caller 
-            # might want to throttle.
-            
+            retry_count = 0
+
             try:
                 events = self.engine.detect_and_process(frame, camera_id)
                 for event in events:
                     self.queue.put(event)
             except Exception as e:
-                LOGGER.error(f"Error processing frame from {camera_id}: {e}")
+                LOGGER.error("Error processing frame from %s: %s", camera_id, e)
 
-        cap.release()
+        source.release()
 
     def get_events(self):
         """Generator to yield events from the queue."""
@@ -295,3 +291,62 @@ class StreamProcessor:
 
     def stop(self):
         self.running = False
+
+
+# --- Optional pipeline integration with YOLO + Tracker ---
+try:
+    from .yolo_engine import YOLOEngine
+    from .tracker import Tracker
+except Exception:
+    YOLOEngine = None  # type: ignore
+    Tracker = None  # type: ignore
+
+
+class DetectionPipeline:
+    """High-level pipeline that can run object detection (YOLO) and
+    simple tracking, while preserving the face-based `DetectionEngine`.
+
+    This class is dependency-safe: if `ultralytics` is not installed the
+    YOLO step becomes a no-op and the pipeline still functions.
+    """
+
+    def __init__(self, face_engine: DetectionEngine, yolo_model_path: str | None = None):
+        self.face_engine = face_engine
+        self.yolo = YOLOEngine(model_path=yolo_model_path) if YOLOEngine is not None else None
+        self.tracker = Tracker() if Tracker is not None else None
+
+    def process_frame(self, frame: np.ndarray, camera_id: str):
+        """Run detection (objects + faces) and tracking on a frame.
+
+        Returns a dict with keys: `detections` (object detections),
+        `face_events` (list of `DetectionEvent`), `tracks` (active tracks).
+        """
+        results = {"detections": [], "face_events": [], "tracks": []}
+
+        # 1) Run YOLO object detection (optional)
+        if self.yolo is not None:
+            try:
+                dets = self.yolo.detect(frame)
+                results["detections"] = dets
+            except Exception:
+                results["detections"] = []
+
+        # 2) Run tracker (optional)
+        if self.tracker is not None and results["detections"]:
+            try:
+                tracks = self.tracker.update(results["detections"])  # timestamp handled in tracker
+                results["tracks"] = tracks
+            except Exception:
+                results["tracks"] = []
+
+        # 3) Face detection/recognition pipeline (existing)
+        try:
+            face_events = self.face_engine.detect_and_process(frame, camera_id)
+            results["face_events"] = [e.to_dict() for e in face_events]
+        except Exception:
+            results["face_events"] = []
+
+        return results
+
+
+__all__ = ["DetectionEngine", "DetectionEvent", "DetectionPipeline"]
