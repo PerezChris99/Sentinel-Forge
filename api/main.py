@@ -246,7 +246,8 @@ else:
     print(f"⚠ Dashboard directory not found at {DASHBOARD_DIR}")
 
 # Attach WebSocket
-attach_socketio(app)
+fastapi_app = app
+app = attach_socketio(app)
 
 
 # Endpoints
