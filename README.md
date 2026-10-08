@@ -110,7 +110,7 @@ flowchart TD
 | 4 | Containerization + service orchestration | Complete |
 | 5 | Persistence correctness + smoke coverage | Complete |
 | 6 | Audit + authentication hardening | Complete |
-| 7 | Documentation + CI stabilization | In progress |
+| 7 | Documentation + CI stabilization | Complete |
 | 8 | Deployment / observability / edge | Environment-dependent |
 | 9 | External integrations | Environment-dependent |
 
@@ -338,7 +338,7 @@ flowchart TB
 - [x] Authentication audit trail.
 - [x] Request audit middleware.
 - [x] Controlled administrator bootstrap.
-- [ ] Stabilize CI with all checks green.
+- [x] Stabilize CI with all core checks green.
 - [ ] Complete camera-to-dashboard integration tests.
 - [ ] Complete application performance benchmarks.
 - [ ] Complete production observability dashboards.
