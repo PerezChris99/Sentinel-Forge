@@ -308,10 +308,6 @@ async def log_sighting(
     Log a sighting event from the detection engine.
     Encrypts embeddings, stores in DB, checks for repeat flags.
     """
-    # Encrypt embedding
-    embedding_json = str(event.embedding)
-    encrypted_embedding = fernet.encrypt(embedding_json.encode()).decode()
-    
     # Flag all unknown faces at all hours
     flag_level = event.flag_level
     
