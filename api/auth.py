@@ -11,11 +11,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from db.models import User, UserRole
+from api.runtime import load_config
 
 # Configuration — single source of truth for SECRET_KEY
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret-key")
+CONFIG = load_config()
+SECRET_KEY = CONFIG.secret_key
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 24h default
+ACCESS_TOKEN_EXPIRE_MINUTES = CONFIG.token_expire_minutes
 security = HTTPBearer()
 
 # Password hashing — use bcrypt directly (passlib has compat issues with bcrypt 4.1+/Python 3.13)
