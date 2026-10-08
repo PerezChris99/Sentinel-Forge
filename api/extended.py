@@ -1873,3 +1873,29 @@ async def graph_stats(db: AsyncSession = Depends(get_db)):
         "by_relation_type": by_type,
         "unique_entities_by_type": by_entity,
     }
+
+
+@router.get("/audit/logs", tags=["Audit"])
+async def get_audit_logs(
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role(UserRole.ADMIN)),
+):
+    """Return recent administrative audit records without exposing password material."""
+    limit = max(1, min(limit, 500))
+    result = await db.execute(
+        select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit)
+    )
+    return [
+        {
+            "id": str(row.id),
+            "user_id": str(row.user_id) if row.user_id else None,
+            "action": row.action,
+            "resource_type": row.resource_type,
+            "resource_id": row.resource_id,
+            "timestamp": row.timestamp.isoformat(),
+            "ip_address": row.ip_address,
+            "details": row.details,
+        }
+        for row in result.scalars().all()
+    ]
