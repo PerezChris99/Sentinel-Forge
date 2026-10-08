@@ -279,6 +279,10 @@ async def create_camera(
     cam_type_str = camera_data.camera_type
     if not cam_type_str:
         cam_type_str = detect_camera_type(camera_data.stream_url).value
+    try:
+        camera_type = CameraType(cam_type_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unsupported camera type") from exc
 
     # Derive snapshot URL for IP Webcam Pro
     snapshot_url = None
@@ -290,7 +294,7 @@ async def create_camera(
     camera = Camera(
         name=camera_data.name,
         camera_id=camera_data.camera_id,
-        camera_type=CameraType(cam_type_str),
+        camera_type=camera_type,
         stream_url=camera_data.stream_url,
         snapshot_url=snapshot_url,
         location=camera_data.location,
@@ -434,7 +438,11 @@ async def delete_camera(
 
 
 @router.post("/cameras/{camera_id}/heartbeat", tags=["Cameras"])
-async def camera_heartbeat(camera_id: str, db: AsyncSession = Depends(get_db)):
+async def camera_heartbeat(
+    camera_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest),
+):
     """Update camera last seen (heartbeat)"""
     result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     camera = result.scalar_one_or_none()
