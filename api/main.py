@@ -301,7 +301,7 @@ async def log_sighting(
     request: Request,
     event: SightingEvent,
     db: AsyncSession = Depends(get_db),
-    # auth: dict = Depends(verify_token)  # Uncomment when JWT is configured
+    _ingest_auth: None = Depends(verify_ingest_key),
 ):
     """
     Log a sighting event from the detection engine.
