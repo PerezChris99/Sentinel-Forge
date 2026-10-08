@@ -1,6 +1,10 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+import pytest
 import numpy as np
+
+pytest.importorskip("cv2")
+pytest.importorskip("face_recognition")
 from detection.engine import DetectionEngine, DetectionEvent
 
 class TestDetectionEngine(unittest.TestCase):
