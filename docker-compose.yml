@@ -33,6 +33,7 @@ services:
     env_file:
       - .env
     environment:
+      RUN_MIGRATIONS: "1"
       SENTINELFORGE_ENV: production
       DB_URL: postgresql+asyncpg://sentinelforge:${POSTGRES_PASSWORD:-change-me}@db:5432/sentinelforge
       REDIS_URL: redis://redis:6379/0
