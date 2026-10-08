@@ -821,10 +821,6 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 @app.get("/api/stats/severity_distribution")
 async def get_severity_distribution(db: AsyncSession = Depends(get_db)):
     """Get distribution of sightings by flag_level (severity)."""
@@ -873,3 +869,7 @@ async def get_camera_volume(db: AsyncSession = Depends(get_db)):
 
 # Export the fully configured ASGI application with Socket.IO attached after all FastAPI routes exist.
 app = attach_socketio(fastapi_app)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
