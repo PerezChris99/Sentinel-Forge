@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import os
 
 from api.celery_app import celery_app
+from api.runtime import load_config
 from db.models import Sighting
 
-DB_URL = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
+DB_URL = load_config().db_url
 
 
 @celery_app.task(name="api.tasks.purge_old_unknowns")
@@ -35,8 +36,7 @@ def purge_old_unknowns():
             await session.commit()
             return result.rowcount
     
-    loop = asyncio.get_event_loop()
-    deleted = loop.run_until_complete(_purge())
+    deleted = asyncio.run(_purge())
     return {"deleted": deleted}
 
 
