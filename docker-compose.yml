@@ -1,0 +1,94 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentinelforge
+      POSTGRES_USER: sentinelforge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinelforge -d sentinelforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUN_MIGRATIONS: "1"
+      SENTINELFORGE_ENV: production
+      DB_URL: postgresql+asyncpg://sentinelforge:${POSTGRES_PASSWORD:-change-me}@db:5432/sentinelforge
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${SENTINELFORGE_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUN_MIGRATIONS: "0"
+      SENTINELFORGE_ENV: production
+      DB_URL: postgresql+asyncpg://sentinelforge:${POSTGRES_PASSWORD:-change-me}@db:5432/sentinelforge
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "api.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUN_MIGRATIONS: "0"
+      SENTINELFORGE_ENV: production
+      DB_URL: postgresql+asyncpg://sentinelforge:${POSTGRES_PASSWORD:-change-me}@db:5432/sentinelforge
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "api.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
