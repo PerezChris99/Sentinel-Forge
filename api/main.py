@@ -648,7 +648,7 @@ async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSes
 
 
 @app.get("/api/persons")
-async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db)):
+async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db), user: dict = Depends(__import__("api.auth", fromlist=["get_current_user"]).get_current_user)):
     """Get persons for gallery view with filtering."""
     from sqlalchemy import select, func
     
