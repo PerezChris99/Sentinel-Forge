@@ -1334,7 +1334,8 @@ async def list_tracks(
     camera_id: Optional[str] = None,
     is_active: Optional[bool] = None,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=100_000),
+    offset: int = Query(0, ge=0, le=100_000),,
+    user: dict = Depends(get_current_user)
 ):
     """List tracks with optional filters."""
     query = select(Track).order_by(Track.last_seen.desc())
@@ -1444,7 +1445,8 @@ async def list_behavior_events(
     camera_id: Optional[str] = None,
     min_severity: int = 1,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=100_000),
+    offset: int = Query(0, ge=0, le=100_000),,
+    user: dict = Depends(get_current_user)
 ):
     """List behavior events with optional filters."""
     query = select(BehaviorEventRecord).order_by(BehaviorEventRecord.timestamp.desc())
@@ -1548,7 +1550,8 @@ async def list_vehicles(
     color: Optional[str] = None,
     camera_id: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=100_000),
+    offset: int = Query(0, ge=0, le=100_000),,
+    user: dict = Depends(get_current_user)
 ):
     """List vehicles with optional filters."""
     query = select(Vehicle).order_by(Vehicle.last_seen.desc())
@@ -1672,7 +1675,8 @@ async def list_zones(
     zone_type: Optional[str] = None,
     floor: Optional[int] = None,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=100_000),
+    offset: int = Query(0, ge=0, le=100_000),,
+    user: dict = Depends(get_current_user)
 ):
     """List zones with optional filters."""
     query = select(ZoneRecord)
@@ -1840,7 +1844,8 @@ async def list_relationships(
     target_type: Optional[str] = None,
     relation_type: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0, le=100_000),
+    offset: int = Query(0, ge=0, le=100_000),,
+    user: dict = Depends(get_current_user)
 ):
     """List entity relationships with optional filters."""
     query = select(EntityRelationship).order_by(EntityRelationship.timestamp.desc())
