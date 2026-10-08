@@ -32,6 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from db.models import Base, Sighting, Person, UserRole
 from api.runtime import load_config
 from api.audit import RequestAuditMiddleware
+from api.auth import get_current_user
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
@@ -648,7 +649,7 @@ async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSes
 
 
 @app.get("/api/persons")
-async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db), user: dict = Depends(__import__("api.auth", fromlist=["get_current_user"]).get_current_user)):
+async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get persons for gallery view with filtering."""
     from sqlalchemy import select, func
     
