@@ -11,8 +11,16 @@ from datetime import datetime
 from queue import Empty, Queue
 from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
-import face_recognition
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    import face_recognition
+except ImportError:
+    face_recognition = None
+
 import numpy as np
 from sklearn.cluster import DBSCAN
 
@@ -53,6 +61,8 @@ class DetectionEngine:
         :param known_faces: Dictionary mapping person_ids to their embedding vectors.
         :param cascade_path: Path to Haar cascade XML. Defaults to frontalface_alt2.
         """
+        if cv2 is None or face_recognition is None:
+            raise RuntimeError("DetectionEngine requires opencv-python and face-recognition dependencies")
         self.known_faces = known_faces or {}
         self.known_embeddings = list(self.known_faces.values())
         self.known_ids = list(self.known_faces.keys())
