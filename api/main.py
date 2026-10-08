@@ -195,6 +195,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestAuditMiddleware, session_factory=lambda: async_session_maker())
 
 # Auth
 security = HTTPBearer()
