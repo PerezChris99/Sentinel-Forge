@@ -370,7 +370,7 @@ async def log_sighting(
 
 # Dashboard API Endpoints
 @app.get("/api/stats/overview")
-async def get_overview_stats(db: AsyncSession = Depends(get_db)):
+async def get_overview_stats(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get high-level overview statistics for dashboard header."""
     from sqlalchemy import select, func
     
@@ -400,7 +400,7 @@ async def get_overview_stats(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/stats/kpis")
-async def get_kpi_stats(db: AsyncSession = Depends(get_db)):
+async def get_kpi_stats(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get KPI card statistics for overview tab."""
     from sqlalchemy import select, func
     
@@ -435,7 +435,7 @@ async def get_kpi_stats(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/sightings/recent")
-async def get_recent_sightings(limit: int = Query(10, ge=1, le=100), db: AsyncSession = Depends(get_db)):
+async def get_recent_sightings(limit: int = Query(10, ge=1, le=100), db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get recent sightings with person information."""
     from sqlalchemy import select
     
@@ -510,7 +510,7 @@ async def get_recent_alerts(limit: int = Query(20, ge=1, le=100), db: AsyncSessi
 
 
 @app.get("/api/stats/camera_activity")
-async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSession = Depends(get_db)):
+async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get camera activity data for chart visualization."""
     from sqlalchemy import select, func
     
@@ -625,7 +625,7 @@ async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(ge
 
 
 @app.get("/api/unknowns")
-async def get_unknowns(days: int = Query(90, ge=1, le=3650), db: AsyncSession = Depends(get_db)):
+async def get_unknowns(days: int = Query(90, ge=1, le=3650), db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get unknown sightings from past N days."""
     from sqlalchemy import select
     
@@ -656,7 +656,7 @@ async def get_unknowns(days: int = Query(90, ge=1, le=3650), db: AsyncSession = 
 
 
 @app.get("/api/reports/events")
-async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_db)):
+async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Generate event report for date range."""
     from sqlalchemy import select, func
     
@@ -703,7 +703,7 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
 
 
 @app.get("/api/stats/severity_distribution")
-async def get_severity_distribution(db: AsyncSession = Depends(get_db)):
+async def get_severity_distribution(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get distribution of sightings by flag_level (severity)."""
     from sqlalchemy import select, func
 
@@ -728,7 +728,7 @@ async def get_severity_distribution(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/stats/camera_volume")
-async def get_camera_volume(db: AsyncSession = Depends(get_db)):
+async def get_camera_volume(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get total sightings count by camera_id."""
     from sqlalchemy import select, func
 
