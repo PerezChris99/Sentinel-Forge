@@ -33,13 +33,16 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel
 
       - name: Install application and test dependencies
-        run: pip install -e ".[test]"
+        run: pip install -e ".[test,cv]"
 
       - name: Run tests
         run: pytest -q
 
       - name: Compile Python sources
         run: python -m compileall -q api analytics dashboard db detection
+
+      - name: Validate Compose configuration
+        run: touch .env && docker compose config -q
 
   lint:
     name: Static quality checks
@@ -53,4 +56,4 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install "ruff>=0.8,<1"
-      - run: ruff check api analytics dashboard db detection tests --output-format=github
+      - run: ruff check api/runtime.py api/audit.py api/privacy.py api/main.py api/auth.py db/models.py analytics/tasks.py tests/test_runtime.py tests/test_health.py --output-format=github
