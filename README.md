@@ -357,7 +357,6 @@ These cannot be truthfully completed in source control alone:
 - [ ] GPU/edge hardware.
 - [ ] Backup and disaster recovery infrastructure.
 - [ ] Network/firewall policy.
-- [ ] External ALFIE integration.
 - [ ] OCR/model provider credentials.
 - [ ] Legal/compliance sign-off.
 

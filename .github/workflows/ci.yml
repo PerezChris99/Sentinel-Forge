@@ -66,7 +66,7 @@ jobs:
           tests/test_runtime.py tests/test_health.py tests/test_api_security.py
           tests/test_dashboard_contract.py tests/test_input_validation.py
           tests/test_runtime_boundaries.py tests/test_websocket_security.py
-          tests/test_sources.py tests/test_models_contract.py tests/test_tasks.py
+          tests/test_sources.py tests/test_models_contract.py
           tests/test_http_security.py --select E,F --ignore E501,E402 --output-format=github
 
       - name: Check undefined names in larger legacy modules

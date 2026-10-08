@@ -61,7 +61,9 @@ class YOLOEngine:
             LOGGER.info("Loaded YOLO model: %s", model_path)
         except Exception as e:
             LOGGER.warning("Failed to load YOLO model (%s): %s", model_path, e)
-            self.model = YOLO()
+            # Do not call the failing provider constructor again. The internal
+            # fallback is dependency-free and is guaranteed to return safely.
+            self.model = _FallbackYOLO()
 
         # minimal label map for COCO-like models; can be extended by user
         self.label_map = {
