@@ -268,7 +268,6 @@ else:
 
 # Attach WebSocket
 fastapi_app = app
-app = attach_socketio(app)
 
 
 # Endpoints
@@ -870,3 +869,7 @@ async def get_camera_volume(db: AsyncSession = Depends(get_db)):
         "labels": [row[0] for row in rows],
         "data": [row[1] for row in rows]
     }
+
+
+# Export the fully configured ASGI application with Socket.IO attached after all FastAPI routes exist.
+app = attach_socketio(fastapi_app)
