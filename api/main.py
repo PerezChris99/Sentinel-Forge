@@ -3,6 +3,7 @@ FastAPI main application for SentinelForge.
 Phase 3: Logging & Storage Layer with security, privacy, and ALFIE integration.
 """
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import redis.asyncio as redis
 from cryptography.fernet import Fernet
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +22,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from db.models import Base, Sighting, Person
 
@@ -29,16 +31,55 @@ from api.websocket import attach_socketio
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret")
-DB_URL = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
 FERNET_KEY = os.getenv("FERNET_KEY", Fernet.generate_key().decode())
 
+# CORS: configurable via environment
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")  # Comma-separated origins or "*"
+
+# Auto-detect DB: try PostgreSQL, fall back to SQLite for dev mode
+_pg_url = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
+_SQLITE_PATH = Path(__file__).resolve().parent.parent / "sentinelforge_dev.db"
+DEV_MODE = False
+
+def _build_engine():
+    global DEV_MODE
+    # If DB_URL explicitly points to sqlite, use it
+    if "sqlite" in _pg_url:
+        DEV_MODE = True
+        return create_async_engine(
+            _pg_url, echo=False, future=True,
+            connect_args={"check_same_thread": False}
+        )
+    # Try to test PostgreSQL connectivity
+    try:
+        import socket
+        from urllib.parse import urlparse
+        parsed = urlparse(_pg_url.replace("+asyncpg", ""))
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 5432
+        s = socket.create_connection((host, port), timeout=2)
+        s.close()
+        print(f"✓ PostgreSQL reachable at {host}:{port}")
+        return create_async_engine(_pg_url, echo=False, future=True)
+    except (OSError, ConnectionRefusedError):
+        DEV_MODE = True
+        sqlite_url = f"sqlite+aiosqlite:///{_SQLITE_PATH}"
+        # Set env so models.py picks up the right dialect
+        os.environ["DB_URL"] = sqlite_url
+        print(f"⚠ PostgreSQL not reachable. Using SQLite dev mode: {_SQLITE_PATH}")
+        return create_async_engine(
+            sqlite_url, echo=False, future=True,
+            connect_args={"check_same_thread": False}
+        )
+
+engine = _build_engine()
+DB_URL = str(engine.url)
+
 # Crypto
 fernet = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
 
-# Database
-engine = create_async_engine(DB_URL, echo=False, future=True)
 async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Redis
@@ -79,8 +120,26 @@ class ALFIEQuery(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global redis_client
+
+    # Security warnings for default secrets
+    if SECRET_KEY in ("changeme-super-secret", "changeme-super-secret-key"):
+        if DEV_MODE:
+            print("⚠ Using default SECRET_KEY (acceptable for dev mode)")
+        else:
+            print("🚨 CRITICAL: Default SECRET_KEY detected in production! Set SECRET_KEY env var.")
+
+    if CORS_ORIGINS.strip() == "*" and not DEV_MODE:
+        print("⚠ CORS allows all origins. Set CORS_ORIGINS env var for production.")
+
+    # In dev mode, auto-create all tables
+    if DEV_MODE:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("✓ SQLite tables created (dev mode)")
+
     try:
         redis_client = await redis.from_url(REDIS_URL, decode_responses=True)
+        await redis_client.ping()
         print(f"✓ Connected to Redis at {REDIS_URL}")
     except Exception as e:
         print(f"⚠ Redis connection failed: {e}")
@@ -101,24 +160,58 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Resolve CORS origins
+if CORS_ORIGINS.strip() == "*":
+    _allowed_origins = ["*"]
+else:
+    _allowed_origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if not DEV_MODE:
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' https://cdn.jsdelivr.net https://cdn.socket.io 'unsafe-inline'; "
+                "style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; "
+                "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; "
+                "img-src 'self' data: blob: http: https:; "
+                "connect-src 'self' ws: wss: http: https:"
+            )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Auth
 security = HTTPBearer()
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Simple JWT verification (stub - expand with proper validation)."""
+    """JWT verification with issuer/audience validation."""
     token = credentials.credentials
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=["HS256"],
+            audience="sentinelforge-api", issuer="sentinelforge"
+        )
         return payload
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -133,7 +226,7 @@ async def get_db():
 # Include extended API router
 from api.extended import router as extended_router
 import api.extended as extended_module
-extended_module.get_db = get_db  # Inject DB dependency
+extended_module._real_get_db = get_db  # Inject the real DB dependency
 app.include_router(extended_router, prefix="/api")
 
 # Mount Dashboard
@@ -158,9 +251,11 @@ async def root():
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Health check endpoint."""
+    from sqlalchemy import text
     try:
-        await db.execute("SELECT 1")
-        return {"status": "ok", "database": "connected"}
+        await db.execute(text("SELECT 1"))
+        db_type = "sqlite (dev)" if DEV_MODE else "postgresql"
+        return {"status": "ok", "database": db_type, "redis": redis_client is not None}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
@@ -189,18 +284,20 @@ async def log_sighting(
         flag_level = max(flag_level, 1)  # Flag as suspicious
         
         # Check for repeat offender (simple Redis cache check)
-        cache_key = f"sightings:{event.person_id}:24h"
-        count = await redis_client.incr(cache_key)
-        await redis_client.expire(cache_key, 86400)  # 24 hours
-        
-        # Escalate repeat unknowns
-        if count > 3:
-            flag_level = max(flag_level, 2)  # Escalate to high_risk
+        if redis_client:
+            cache_key = f"sightings:{event.person_id}:24h"
+            count = await redis_client.incr(cache_key)
+            await redis_client.expire(cache_key, 86400)  # 24 hours
+            
+            # Escalate repeat unknowns
+            if count > 3:
+                flag_level = max(flag_level, 2)  # Escalate to high_risk
     else:
         # Known persons: check for repeat sightings
-        cache_key = f"sightings:{event.person_id}:24h"
-        count = await redis_client.incr(cache_key)
-        await redis_client.expire(cache_key, 86400)  # 24 hours
+        if redis_client:
+            cache_key = f"sightings:{event.person_id}:24h"
+            count = await redis_client.incr(cache_key)
+            await redis_client.expire(cache_key, 86400)  # 24 hours
     
     # Create sighting record
     sighting = Sighting(
@@ -211,7 +308,7 @@ async def log_sighting(
         embedding=event.embedding,  # Store as-is (encryption happens at app layer if needed)
         face_image_b64=event.cropped_b64,
         flag_level=flag_level,
-        metadata=event.metadata,
+        extra_metadata=event.metadata,
     )
     
     db.add(sighting)
