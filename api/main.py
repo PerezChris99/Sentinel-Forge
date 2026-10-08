@@ -25,18 +25,18 @@ from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from db.models import Base, Sighting, Person
+from api.runtime import load_config
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CONFIG = load_config()
+SECRET_KEY = CONFIG.secret_key
+REDIS_URL = CONFIG.redis_url
 ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
-FERNET_KEY = os.getenv("FERNET_KEY", Fernet.generate_key().decode())
-
-# CORS: configurable via environment
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")  # Comma-separated origins or "*"
+FERNET_KEY = CONFIG.fernet_key or Fernet.generate_key().decode()
+CORS_ORIGINS = ",".join(CONFIG.cors_origins)
 
 # Auto-detect DB: try PostgreSQL, fall back to SQLite for dev mode
 _pg_url = os.getenv("DB_URL", "postgresql+asyncpg://sentinelforge:sentinelforge@localhost:5432/sentinelforge")
@@ -122,14 +122,8 @@ async def lifespan(app: FastAPI):
     global redis_client
 
     # Security warnings for default secrets
-    if SECRET_KEY in ("changeme-super-secret", "changeme-super-secret-key"):
-        if DEV_MODE:
-            print("⚠ Using default SECRET_KEY (acceptable for dev mode)")
-        else:
-            print("🚨 CRITICAL: Default SECRET_KEY detected in production! Set SECRET_KEY env var.")
-
-    if CORS_ORIGINS.strip() == "*" and not DEV_MODE:
-        print("⚠ CORS allows all origins. Set CORS_ORIGINS env var for production.")
+    if CONFIG.is_production and DEV_MODE:
+        raise RuntimeError("Production environment cannot silently fall back to SQLite")
 
     # In dev mode, auto-create all tables
     if DEV_MODE:
@@ -161,7 +155,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Resolve CORS origins
-if CORS_ORIGINS.strip() == "*":
+if CONFIG.allow_all_origins:
     _allowed_origins = ["*"]
 else:
     _allowed_origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
@@ -170,7 +164,7 @@ else:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=True,
+    allow_credentials=not CONFIG.allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
@@ -258,6 +252,34 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         return {"status": "ok", "database": db_type, "redis": redis_client is not None}
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
+
+
+@app.get("/live")
+async def liveness_check():
+    """Process liveness probe; does not require database or Redis."""
+    return {"status": "alive", "environment": CONFIG.environment}
+
+
+@app.get("/ready")
+async def readiness_check(db: AsyncSession = Depends(get_db)):
+    """Readiness probe requiring the configured database to answer."""
+    from sqlalchemy import text
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
+    return {"status": "ready", "database": "ok", "redis": redis_client is not None}
+
+
+@app.get("/metrics")
+async def metrics():
+    """Minimal Prometheus-compatible application availability metric."""
+    return Response(
+        "# HELP sentinelforge_up Application availability marker\n"
+        "# TYPE sentinelforge_up gauge\n"
+        "sentinelforge_up 1\n",
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @app.post("/log_sighting")
