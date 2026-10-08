@@ -64,7 +64,7 @@ async def test_collection_read_endpoints_handle_empty_database():
     assert await extended.list_persons(db=db, user=USER) == []
     assert await extended.list_alerts(db=db, limit=100, user=USER) == []
     assert await extended.list_incidents(db=db, limit=50, user=USER) == []
-    assert await extended.search_all("anything", db=db, user=USER) is not None
+    assert await extended.search_all("anything", db=db, limit=50, user=USER) is not None
     assert await extended.list_detections(db=db, limit=100, offset=0, user=USER) == []
     assert await extended.list_tracks(db=db, limit=100, offset=0, user=USER) == []
     assert await extended.list_behavior_events(db=db, limit=100, offset=0, user=USER) == []
@@ -80,11 +80,12 @@ async def test_analytics_and_graph_empty_state_endpoints():
     behavior = await extended.behavior_stats(db=db, hours=24)
     graph = await extended.graph_stats(db=db, user=USER)
     links = await extended.get_entity_links("person", "p1", db=db, limit=100)
-    occupancy = await extended.zone_occupancy("zone-1", db=db)
+    with pytest.raises(HTTPException) as exc:
+        await extended.zone_occupancy("zone-1", db=db)
+    assert exc.value.status_code == 404
     assert behavior is not None
     assert graph["total_relationships"] == 0
     assert links == []
-    assert occupancy is not None
 
 
 @pytest.mark.asyncio
