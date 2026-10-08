@@ -1,11 +1,8 @@
 """
 FastAPI main application for SentinelForge.
-Phase 3: Logging & Storage Layer with security, privacy, and ALFIE integration.
+Phase 3: Logging & Storage Layer with security, privacy, and operational hardening.
 """
-import asyncio
 import base64
-import hashlib
-import hmac
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -29,10 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from db.models import Base, Sighting, Person, UserRole
+from db.models import Base, Sighting, Person
 from api.runtime import load_config
 from api.audit import RequestAuditMiddleware
-from api.auth import get_current_user, require_role
+from api.auth import get_current_user
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
@@ -42,8 +39,6 @@ CONFIG = load_config()
 SECRET_KEY = CONFIG.secret_key
 REDIS_URL = CONFIG.redis_url
 INGEST_API_KEY = CONFIG.ingest_api_key
-ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
-ALFIE_WEBHOOK_SECRET = os.getenv("ALFIE_WEBHOOK_SECRET", "")
 FERNET_KEY = CONFIG.fernet_key or Fernet.generate_key().decode()
 CORS_ORIGINS = ",".join(CONFIG.cors_origins)
 
@@ -137,12 +132,6 @@ class PersonResponse(BaseModel):
     known_status: bool
     consent_given: bool
     last_seen: Optional[str]
-
-
-class ALFIEQuery(BaseModel):
-    query_type: str
-    person_id: Optional[str] = None
-    date_range: Optional[dict] = None
 
 
 # Lifespan context
@@ -376,115 +365,7 @@ async def log_sighting(
     await db.commit()
     await db.refresh(sighting)
     
-    # High-risk alerts are delivered asynchronously so ingestion latency does not
-    # depend on the external ALFIE service.
-    if flag_level >= 2 and ALFIE_WEBHOOK_URL:
-        from api.tasks import send_alfie_webhook
-        send_alfie_webhook.delay({
-            "event": "high_risk_sighting",
-            "sighting_id": str(sighting.id),
-            "camera_id": sighting.camera_id,
-            "person_id": str(sighting.person_id) if sighting.person_id else None,
-            "flag_level": flag_level,
-            "timestamp": sighting.timestamp.isoformat(),
-        })
-    
     return {"status": "logged", "sighting_id": str(sighting.id), "flag_level": flag_level}
-
-
-@app.post("/api/alfie/receive_query")
-async def alfie_query(
-    query: ALFIEQuery,
-    db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_role(UserRole.OPERATOR)),
-):
-    """Execute a bounded ALFIE intelligence query against SentinelForge data."""
-    from sqlalchemy import select
-    query_type = query.query_type.strip().lower()
-
-    if query_type == "person":
-        if not query.person_id:
-            raise HTTPException(status_code=400, detail="person_id is required for person queries")
-        try:
-            person_id = UUID(query.person_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="person_id must be a UUID") from exc
-        person = await db.get(Person, person_id)
-        if person is None:
-            raise HTTPException(status_code=404, detail="Person not found")
-        sightings = (await db.execute(
-            select(Sighting).where(Sighting.person_id == person_id)
-            .order_by(Sighting.timestamp.desc()).limit(100)
-        )).scalars().all()
-        return {
-            "status": "ok", "query_type": query_type,
-            "person": {"id": str(person.id), "name": person.name, "role": person.role},
-            "sightings": [
-                {"id": str(s.id), "camera_id": s.camera_id, "timestamp": s.timestamp.isoformat(),
-                 "confidence": s.confidence, "flag_level": s.flag_level}
-                for s in sightings
-            ],
-        }
-
-    if query_type in {"sightings", "alerts"}:
-        statement = select(Sighting).order_by(Sighting.timestamp.desc()).limit(100)
-        if query_type == "alerts":
-            statement = statement.where(Sighting.flag_level >= 1)
-        sightings = (await db.execute(statement)).scalars().all()
-        return {
-            "status": "ok", "query_type": query_type,
-            "items": [
-                {"id": str(s.id), "person_id": str(s.person_id) if s.person_id else None,
-                 "camera_id": s.camera_id, "timestamp": s.timestamp.isoformat(),
-                 "confidence": s.confidence, "flag_level": s.flag_level}
-                for s in sightings
-            ],
-        }
-
-    if query_type == "patterns":
-        from db.models import Pattern
-        patterns = (await db.execute(
-            select(Pattern).order_by(Pattern.detected_at.desc()).limit(100)
-        )).scalars().all()
-        return {
-            "status": "ok", "query_type": query_type,
-            "items": [
-                {"id": str(p.id), "pattern_type": p.pattern_type, "confidence": p.confidence,
-                 "detected_at": p.detected_at.isoformat() if p.detected_at else None,
-                 "metadata": p.metadata_json}
-                for p in patterns
-            ],
-        }
-
-    raise HTTPException(status_code=400, detail="Unsupported query_type")
-
-
-@app.post("/api/alfie/alert")
-async def trigger_alfie_alert(
-    payload: dict,
-    user: dict = Depends(require_role(UserRole.OPERATOR)),
-):
-    """Deliver an alert to the configured ALFIE webhook."""
-    if not ALFIE_WEBHOOK_URL:
-        raise HTTPException(status_code=503, detail="ALFIE webhook is not configured")
-
-    import requests
-    import json
-    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    headers = {"Content-Type": "application/json", "User-Agent": "SentinelForge/1.0"}
-    if ALFIE_WEBHOOK_SECRET:
-        signature = hmac.new(
-            ALFIE_WEBHOOK_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-        headers["X-SentinelForge-Signature"] = signature
-    try:
-        response = await asyncio.to_thread(
-            requests.post, ALFIE_WEBHOOK_URL, data=body, headers=headers, timeout=10
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail="ALFIE webhook delivery failed") from exc
-    return {"status": "delivered", "http_status": response.status_code}
 
 
 # Dashboard API Endpoints
