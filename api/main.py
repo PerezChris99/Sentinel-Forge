@@ -2,11 +2,16 @@
 FastAPI main application for SentinelForge.
 Phase 3: Logging & Storage Layer with security, privacy, and ALFIE integration.
 """
+import asyncio
+import base64
+import hashlib
+import hmac
 import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
+from uuid import UUID
 from pathlib import Path
 
 import redis.asyncio as redis
@@ -16,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -24,9 +29,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from db.models import Base, Sighting, Person
+from db.models import Base, Sighting, Person, UserRole
 from api.runtime import load_config
 from api.audit import RequestAuditMiddleware
+from api.auth import get_current_user, require_role
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
@@ -37,6 +43,7 @@ SECRET_KEY = CONFIG.secret_key
 REDIS_URL = CONFIG.redis_url
 INGEST_API_KEY = CONFIG.ingest_api_key
 ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
+ALFIE_WEBHOOK_SECRET = os.getenv("ALFIE_WEBHOOK_SECRET", "")
 FERNET_KEY = CONFIG.fernet_key or Fernet.generate_key().decode()
 CORS_ORIGINS = ",".join(CONFIG.cors_origins)
 
@@ -93,14 +100,34 @@ limiter = Limiter(key_func=get_remote_address)
 # Pydantic Models
 class SightingEvent(BaseModel):
     event_type: str = "sighting"
-    timestamp: str
-    camera_id: str
+    timestamp: datetime
+    camera_id: str = Field(..., min_length=1, max_length=128)
     person_id: Optional[str] = None
     confidence: float = Field(..., ge=0.0, le=1.0)
     embedding: List[float] = Field(..., min_length=128, max_length=128)
-    cropped_b64: str
+    cropped_b64: str = Field(..., min_length=1, max_length=10_000_000)
     flag_level: int = Field(0, ge=0, le=3)
     metadata: dict = Field(default_factory=dict)
+
+    @field_validator("person_id")
+    @classmethod
+    def validate_person_id(cls, value: Optional[str]) -> Optional[str]:
+        if value and not value.startswith("unknown"):
+            try:
+                UUID(value)
+            except ValueError as exc:
+                raise ValueError("person_id must be a UUID or an unknown-* identifier") from exc
+        return value
+
+    @field_validator("cropped_b64")
+    @classmethod
+    def validate_image_payload(cls, value: str) -> str:
+        encoded = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
+        try:
+            base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("cropped_b64 must contain valid base64 data") from exc
+        return value
 
 
 class PersonResponse(BaseModel):
@@ -168,7 +195,7 @@ app.add_middleware(
     allow_origins=_allowed_origins,
     allow_credentials=not CONFIG.allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Ingest-Key", "X-Bootstrap-Token"],
 )
 
 
@@ -240,7 +267,7 @@ else:
     print(f"⚠ Dashboard directory not found at {DASHBOARD_DIR}")
 
 # Attach WebSocket
-attach_socketio(app)
+fastapi_app = app
 
 
 # Endpoints
@@ -336,7 +363,7 @@ async def log_sighting(
     # Create sighting record
     sighting = Sighting(
         person_id=event.person_id if event.person_id and not event.person_id.startswith("unknown") else None,
-        timestamp=datetime.fromisoformat(event.timestamp.replace("Z", "+00:00")),
+        timestamp=event.timestamp,
         camera_id=event.camera_id,
         confidence=event.confidence,
         embedding=event.embedding,  # Store as-is (encryption happens at app layer if needed)
@@ -349,10 +376,18 @@ async def log_sighting(
     await db.commit()
     await db.refresh(sighting)
     
-    # Trigger webhook if flagged
+    # High-risk alerts are delivered asynchronously so ingestion latency does not
+    # depend on the external ALFIE service.
     if flag_level >= 2 and ALFIE_WEBHOOK_URL:
-        # TODO: Use Celery task for async webhook
-        pass
+        from api.tasks import send_alfie_webhook
+        send_alfie_webhook.delay({
+            "event": "high_risk_sighting",
+            "sighting_id": str(sighting.id),
+            "camera_id": sighting.camera_id,
+            "person_id": str(sighting.person_id) if sighting.person_id else None,
+            "flag_level": flag_level,
+            "timestamp": sighting.timestamp.isoformat(),
+        })
     
     return {"status": "logged", "sighting_id": str(sighting.id), "flag_level": flag_level}
 
@@ -361,20 +396,95 @@ async def log_sighting(
 async def alfie_query(
     query: ALFIEQuery,
     db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role(UserRole.OPERATOR)),
 ):
-    """Inbound endpoint for ALFIE to query patterns or data."""
-    # Placeholder implementation
-    return {"status": "received", "query_type": query.query_type}
+    """Execute a bounded ALFIE intelligence query against SentinelForge data."""
+    from sqlalchemy import select
+    query_type = query.query_type.strip().lower()
+
+    if query_type == "person":
+        if not query.person_id:
+            raise HTTPException(status_code=400, detail="person_id is required for person queries")
+        try:
+            person_id = UUID(query.person_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="person_id must be a UUID") from exc
+        person = await db.get(Person, person_id)
+        if person is None:
+            raise HTTPException(status_code=404, detail="Person not found")
+        sightings = (await db.execute(
+            select(Sighting).where(Sighting.person_id == person_id)
+            .order_by(Sighting.timestamp.desc()).limit(100)
+        )).scalars().all()
+        return {
+            "status": "ok", "query_type": query_type,
+            "person": {"id": str(person.id), "name": person.name, "role": person.role},
+            "sightings": [
+                {"id": str(s.id), "camera_id": s.camera_id, "timestamp": s.timestamp.isoformat(),
+                 "confidence": s.confidence, "flag_level": s.flag_level}
+                for s in sightings
+            ],
+        }
+
+    if query_type in {"sightings", "alerts"}:
+        statement = select(Sighting).order_by(Sighting.timestamp.desc()).limit(100)
+        if query_type == "alerts":
+            statement = statement.where(Sighting.flag_level >= 1)
+        sightings = (await db.execute(statement)).scalars().all()
+        return {
+            "status": "ok", "query_type": query_type,
+            "items": [
+                {"id": str(s.id), "person_id": str(s.person_id) if s.person_id else None,
+                 "camera_id": s.camera_id, "timestamp": s.timestamp.isoformat(),
+                 "confidence": s.confidence, "flag_level": s.flag_level}
+                for s in sightings
+            ],
+        }
+
+    if query_type == "patterns":
+        from db.models import Pattern
+        patterns = (await db.execute(
+            select(Pattern).order_by(Pattern.detected_at.desc()).limit(100)
+        )).scalars().all()
+        return {
+            "status": "ok", "query_type": query_type,
+            "items": [
+                {"id": str(p.id), "pattern_type": p.pattern_type, "confidence": p.confidence,
+                 "detected_at": p.detected_at.isoformat() if p.detected_at else None,
+                 "metadata": p.metadata_json}
+                for p in patterns
+            ],
+        }
+
+    raise HTTPException(status_code=400, detail="Unsupported query_type")
 
 
 @app.post("/api/alfie/alert")
-async def trigger_alfie_alert(payload: dict):
-    """
-    Outbound webhook trigger (usually called internally via Celery).
-    Accepts payload and forwards to ALFIE.
-    """
-    # TODO: Implement HTTP POST to ALFIE_WEBHOOK_URL
-    return {"status": "queued", "payload": payload}
+async def trigger_alfie_alert(
+    payload: dict,
+    user: dict = Depends(require_role(UserRole.OPERATOR)),
+):
+    """Deliver an alert to the configured ALFIE webhook."""
+    if not ALFIE_WEBHOOK_URL:
+        raise HTTPException(status_code=503, detail="ALFIE webhook is not configured")
+
+    import requests
+    import json
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    headers = {"Content-Type": "application/json", "User-Agent": "SentinelForge/1.0"}
+    if ALFIE_WEBHOOK_SECRET:
+        signature = hmac.new(
+            ALFIE_WEBHOOK_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        headers["X-SentinelForge-Signature"] = signature
+    try:
+        response = await asyncio.to_thread(
+            requests.post, ALFIE_WEBHOOK_URL, data=body, headers=headers, timeout=10
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="ALFIE webhook delivery failed") from exc
+    return {"status": "delivered", "http_status": response.status_code}
 
 
 # Dashboard API Endpoints
@@ -566,7 +676,7 @@ async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSes
 
 
 @app.get("/api/persons")
-async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db)):
+async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get persons for gallery view with filtering."""
     from sqlalchemy import select, func
     
@@ -599,7 +709,7 @@ async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(ge
         )
         query = query.where(Person.id.in_(recent_ids))
     
-    result = await db.execute(query)
+    result = await db.execute(query.limit(500))
     persons = result.scalars().all()
     
     # Get last sighting and count for each person
@@ -682,7 +792,7 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
         .order_by(Sighting.timestamp.desc())
     )
     
-    result = await db.execute(query)
+    result = await db.execute(query.limit(500))
     sightings = result.scalars().all()
     
     # Calculate summary
@@ -710,10 +820,6 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
         "events": events[:500]  # Limit to 500 for performance
     }
 
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 @app.get("/api/stats/severity_distribution")
 async def get_severity_distribution(db: AsyncSession = Depends(get_db)):
@@ -759,3 +865,11 @@ async def get_camera_volume(db: AsyncSession = Depends(get_db)):
         "labels": [row[0] for row in rows],
         "data": [row[1] for row in rows]
     }
+
+
+# Export the fully configured ASGI application with Socket.IO attached after all FastAPI routes exist.
+app = attach_socketio(fastapi_app)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

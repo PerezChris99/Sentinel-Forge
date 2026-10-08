@@ -35,8 +35,11 @@ jobs:
       - name: Install application and test dependencies
         run: pip install -e ".[test]"
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests with branch coverage
+        run: coverage run --branch -m pytest -q
+
+      - name: Report coverage
+        run: coverage report -m
 
       - name: Compile Python sources
         run: python -m compileall -q api analytics dashboard db detection
@@ -56,4 +59,16 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install "ruff>=0.8,<1"
-      - run: ruff check api/runtime.py api/audit.py api/privacy.py tests/test_runtime.py tests/test_health.py --select E,F --output-format=github
+      - name: Lint hardened modules
+        run: >-
+          ruff check api/auth.py api/tasks.py api/websocket.py detection/sources.py
+          dashboard/services/api_client.py api/runtime.py api/audit.py api/privacy.py
+          tests/test_runtime.py tests/test_health.py tests/test_api_security.py
+          tests/test_dashboard_contract.py tests/test_input_validation.py
+          tests/test_runtime_boundaries.py tests/test_websocket_security.py
+          tests/test_sources.py tests/test_models_contract.py tests/test_tasks.py
+          tests/test_http_security.py --select E,F --ignore E501,E402 --output-format=github
+
+      - name: Check undefined names in larger legacy modules
+        run: >-
+          ruff check api/main.py api/extended.py --select F821 --output-format=github

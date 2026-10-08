@@ -74,13 +74,22 @@ def validate_stream_url(stream_url: str, allow_private: bool = True) -> Tuple[bo
     if url.isdigit():
         return True, "USB device"
 
-    # File path
+    # File paths are accepted for local playback/testing.
     if not url.startswith(("http://", "https://", "rtsp://")):
+        if "://" in url:
+            return False, "Unsupported stream scheme"
         return True, "File path"
 
     parsed = urlparse(url)
+    if parsed.scheme == "rtsp" and parsed.port is not None and not 1 <= parsed.port <= 65535:
+        return False, "Invalid port"
+    if parsed.scheme in {"http", "https"} and parsed.port is not None and not 1 <= parsed.port <= 65535:
+        return False, "Invalid port"
     if not parsed.hostname:
         return False, "Missing hostname"
+    if parsed.hostname.lower() in {"localhost", "ip6-localhost"}:
+        if not allow_private:
+            return False, "Localhost is not allowed"
 
     # SSRF protection in production: block private IPs unless allowed
     if not allow_private and _PRIVATE_RANGES.match(parsed.hostname):

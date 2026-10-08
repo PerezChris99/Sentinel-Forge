@@ -8,7 +8,7 @@ import base64
 import hmac
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status, Request
 from pydantic import BaseModel, Field, EmailStr
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -279,6 +279,10 @@ async def create_camera(
     cam_type_str = camera_data.camera_type
     if not cam_type_str:
         cam_type_str = detect_camera_type(camera_data.stream_url).value
+    try:
+        camera_type = CameraType(cam_type_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Unsupported camera type") from exc
 
     # Derive snapshot URL for IP Webcam Pro
     snapshot_url = None
@@ -290,7 +294,7 @@ async def create_camera(
     camera = Camera(
         name=camera_data.name,
         camera_id=camera_data.camera_id,
-        camera_type=CameraType(cam_type_str),
+        camera_type=camera_type,
         stream_url=camera_data.stream_url,
         snapshot_url=snapshot_url,
         location=camera_data.location,
@@ -434,7 +438,11 @@ async def delete_camera(
 
 
 @router.post("/cameras/{camera_id}/heartbeat", tags=["Cameras"])
-async def camera_heartbeat(camera_id: str, db: AsyncSession = Depends(get_db)):
+async def camera_heartbeat(
+    camera_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest),
+):
     """Update camera last seen (heartbeat)"""
     result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     camera = result.scalar_one_or_none()
@@ -773,7 +781,8 @@ async def list_alerts(
     db: AsyncSession = Depends(get_db),
     status: Optional[AlertStatus] = None,
     severity: Optional[int] = None,
-    limit: int = 100
+    limit: int = Query(100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
 ):
     """List alerts with optional filtering"""
     query = select(Alert).order_by(Alert.created_at.desc())
@@ -920,7 +929,8 @@ async def create_incident(
 async def list_incidents(
     db: AsyncSession = Depends(get_db),
     status: Optional[IncidentStatus] = None,
-    limit: int = 50
+    limit: int = Query(50, ge=1, le=500),
+    user: dict = Depends(get_current_user),
 ):
     """List incidents"""
     query = select(Incident).order_by(Incident.created_at.desc())
@@ -1073,7 +1083,7 @@ async def add_incident_event(
 async def search_all(
     query: str,
     db: AsyncSession = Depends(get_db),
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
     user: User = Depends(get_current_user)
 ):
     """Full-text search across persons, sightings, and incidents"""
@@ -1235,8 +1245,9 @@ async def list_detections(
     db: AsyncSession = Depends(get_db),
     camera_id: Optional[str] = None,
     object_class: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user),
 ):
     """List recent detected objects with optional filters."""
     query = select(DetectedObject).order_by(DetectedObject.last_seen.desc())
@@ -1322,8 +1333,9 @@ async def list_tracks(
     db: AsyncSession = Depends(get_db),
     camera_id: Optional[str] = None,
     is_active: Optional[bool] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user)
 ):
     """List tracks with optional filters."""
     query = select(Track).order_by(Track.last_seen.desc())
@@ -1432,8 +1444,9 @@ async def list_behavior_events(
     zone_id: Optional[str] = None,
     camera_id: Optional[str] = None,
     min_severity: int = 1,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user)
 ):
     """List behavior events with optional filters."""
     query = select(BehaviorEventRecord).order_by(BehaviorEventRecord.timestamp.desc())
@@ -1467,7 +1480,7 @@ async def list_behavior_events(
 @router.get("/behaviors/stats", tags=["Behaviors"])
 async def behavior_stats(
     db: AsyncSession = Depends(get_db),
-    hours: int = 24,
+    hours: int = Query(24, ge=1, le=168),
 ):
     """Return aggregated behavior event counts by type."""
     since = datetime.utcnow() - timedelta(hours=hours)
@@ -1536,8 +1549,9 @@ async def list_vehicles(
     vehicle_type: Optional[str] = None,
     color: Optional[str] = None,
     camera_id: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user)
 ):
     """List vehicles with optional filters."""
     query = select(Vehicle).order_by(Vehicle.last_seen.desc())
@@ -1573,7 +1587,7 @@ async def list_vehicles(
 async def search_vehicle_by_plate(
     plate: str,
     db: AsyncSession = Depends(get_db),
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500),
 ):
     """Search vehicles by partial plate number."""
     query = (
@@ -1660,8 +1674,9 @@ async def list_zones(
     db: AsyncSession = Depends(get_db),
     zone_type: Optional[str] = None,
     floor: Optional[int] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user)
 ):
     """List zones with optional filters."""
     query = select(ZoneRecord)
@@ -1828,8 +1843,9 @@ async def list_relationships(
     source_id: Optional[str] = None,
     target_type: Optional[str] = None,
     relation_type: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user)
 ):
     """List entity relationships with optional filters."""
     query = select(EntityRelationship).order_by(EntityRelationship.timestamp.desc())
@@ -1865,7 +1881,7 @@ async def get_entity_links(
     entity_id: str,
     db: AsyncSession = Depends(get_db),
     relation_type: Optional[str] = None,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
 ):
     """Get all relationships for a specific entity (both directions)."""
     outgoing_q = select(EntityRelationship).where(
@@ -1942,7 +1958,7 @@ async def graph_stats(db: AsyncSession = Depends(get_db), user: dict = Depends(g
 
 @router.get("/audit/logs", tags=["Audit"])
 async def get_audit_logs(
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role(UserRole.ADMIN)),
 ):
