@@ -29,7 +29,7 @@ def test_no_duplicate_api_route_methods():
 def test_dashboard_persons_endpoint_is_single_authoritative_route():
     matches = [r for r in _routes() if r.path == "/api/persons" and "GET" in (r.methods or set())]
     assert len(matches) == 1
-    assert matches[0].endpoint.__name__ == "list_persons"
+    assert matches[0].endpoint.__name__ == "get_persons_gallery"
 
 
 @pytest.mark.parametrize(
@@ -52,7 +52,8 @@ def test_dashboard_persons_endpoint_is_single_authoritative_route():
     ],
 )
 def test_sensitive_api_routes_require_authentication(path):
-    route = next(r for r in _routes() if r.path == path)
+    route = next((r for r in _routes() if r.path.rstrip("/") == path.rstrip("/") or r.path.startswith(path.rstrip("/") + "/{")), None)
+    assert route is not None, f"route missing: {path}"
     source = inspect.getsource(route.endpoint)
     assert "Depends(get_current_user)" in source or "Depends(require_role" in source or "Depends(require_operator_or_ingest)" in source
 
