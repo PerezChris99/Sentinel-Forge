@@ -175,7 +175,7 @@ app.add_middleware(
     allow_origins=_allowed_origins,
     allow_credentials=not CONFIG.allow_all_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Ingest-Key", "X-Bootstrap-Token"],
 )
 
 
@@ -690,7 +690,7 @@ async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(ge
         )
         query = query.where(Person.id.in_(recent_ids))
     
-    result = await db.execute(query)
+    result = await db.execute(query.limit(500))
     persons = result.scalars().all()
     
     # Get last sighting and count for each person
@@ -773,7 +773,7 @@ async def get_event_report(start: str, end: str, db: AsyncSession = Depends(get_
         .order_by(Sighting.timestamp.desc())
     )
     
-    result = await db.execute(query)
+    result = await db.execute(query.limit(500))
     sightings = result.scalars().all()
     
     # Calculate summary
