@@ -26,6 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from db.models import Base, Sighting, Person
 from api.runtime import load_config
+from api.audit import RequestAuditMiddleware
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
