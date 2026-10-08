@@ -1,9 +1,11 @@
 # SentinelForge Dashboard (Phase 5) – Implementation Blueprint
 
+_Updated: 2025-12-01_
+
 ## Objectives
 - Deliver the Dash-based "SentinelForge" web application as the primary operator interface.
-- Provide real-time monitoring, forensic review, and reporting workflows that align with privacy, compliance, and scalability requirements.
-- Ensure the dashboard can be developed and tested ahead of the rest of the stack by using mocked APIs/websockets, enabling parallel workstreams.
+- Provide real-time monitoring, forensic review, and reporting workflows aligned with privacy, compliance, and scalability requirements.
+- Ensure the dashboard can be developed and tested ahead of the rest of the stack by using mocked APIs/WebSocket streams, enabling parallel workstreams.
 
 ## Core Views & Components
 1. **Overview Tab**
@@ -19,7 +21,7 @@
    - Filters for date range, flag level, camera, and cluster ID.
    - Action drawer to label/merge clusters into known persons via API call.
 4. **Reports Tab**
-   - Buttons to export CSV/PDF using `/api/reports` endpoints.
+   - Buttons to export CSV/PDF via `/api/reports` endpoints.
    - Embeddable analytics widgets (pattern heatmaps, anomaly distribution).
    - "ALFIE summary" placeholder to display incoming assistant insights when available.
 
@@ -32,12 +34,12 @@
   - `GET /api/unknown-clusters?page=&flag_level=` → gallery payloads.
   - `POST /api/unknown-clusters/{id}/label` → convert cluster to known person.
   - `GET /api/reports/daily.csv` & `/api/reports/daily.pdf` → downloads.
-  - `POST /api/alfie/alert` (outbound hook triggered elsewhere, but dashboard should visualize ack status).
+  - `POST /api/alfie/alert` (outbound hook triggered elsewhere; dashboard visualizes ack status).
 
 ## State Management Strategy
-- Central `Store` class (in-memory) fed by WebSocket updates; fall back to periodic REST refresh (every 30s) to correct drift.
+- Central `Store` class (in-memory) fed by WebSocket updates; fall back to periodic REST refresh (every 30 s) to correct drift.
 - Dash callbacks read from `dcc.Store` components (e.g., `id="live-events-store"`).
-- Use `diskcache` or Redis-backed caching for gunicorn workers in production.
+- Use `diskcache` or Redis-backed caching when running under Gunicorn for production-safe callbacks.
 
 ## Privacy & Security Considerations
 - Mask/blur UI thumbnails for unknowns until explicit reveal (toggle in UI respecting RBAC).
@@ -51,18 +53,18 @@
 - Pagination to limit gallery payload to ≤ 20 items/page.
 
 ## Testing Plan
-- Component tests with `pytest-dash`/`dash.testing` for callbacks and state transitions.
-- Visual regression via Percy (optional) or Snapshots of graph JSON structures.
+- Component tests with `dash.testing` for callbacks and state transitions.
+- Visual regression via Snapshot of graph JSON structures (stored under `tests/__snapshots__`).
 - WebSocket test harness using `pytest-asyncio` to emit fake events and assert UI store updates.
 
 ## Dependencies & Tooling
 - Dash 2.15+, Plotly 5+, dash-bootstrap-components, python-socketio client, requests, authlib (JWT verification helper).
-- For local dev, mock backend via `uvicorn docs.mocks.api:app --reload` and `socket.io` test server.
+- For local dev, mock backend via `uvicorn mock_api:app --reload` and `socket.io` test server script under `dashboard/services/mocks/`.
 
 ## Delivery Checklist
 - `dashboard/app.py` with layout, callbacks, and data services.
 - `dashboard/services/api_client.py` for REST interactions with JWT handling.
 - `dashboard/services/socket_client.py` for live updates.
 - `dashboard/assets/` for CSS, favicon, etc.
-- Unit/integration tests under `tests/test_dashboard_*.py` covering callbacks.
+- Unit/integration tests under `tests/test_dashboard_*.py` covering callbacks and data transforms.
 - README section describing dashboard setup, env vars (`DASHBOARD_API_URL`, `DASHBOARD_SOCKET_URL`, `JWT_TOKEN`).

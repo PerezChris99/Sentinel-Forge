@@ -6,6 +6,18 @@ const REFRESH_INTERVAL = 5000; // 5 seconds
 let refreshTimer = null;
 let cameraChart = null;
 
+// Accent palette for charts
+const SF_CHART_COLORS = ['#6366f1', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6'];
+
+// Dark theme chart defaults (applied after DOM ready so Chart.js registry is fully loaded)
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(99, 102, 241, 0.1)';
+        Chart.defaults.set('plugins.legend.labels', { color: '#94a3b8' });
+    }
+});
+
 // Utility Functions
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
@@ -217,7 +229,7 @@ async function renderSeverityChart() {
             labels: ['Normal', 'Flagged', 'Repeat', 'Crit'],
             datasets: [{
                 data: chartData,
-                backgroundColor: ['#ecf0f1', '#f39c12', '#e67e22', '#c0392b'],
+                backgroundColor: ['#334155', '#f59e0b', '#f97316', '#ef4444'],
                 borderWidth: 0
             }]
         },
@@ -225,7 +237,7 @@ async function renderSeverityChart() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } }
+                legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 }, color: '#94a3b8' } }
             },
             cutout: '70%'
         }
@@ -248,8 +260,9 @@ async function renderCameraVolumeChart() {
             datasets: [{
                 label: 'Sightings',
                 data: values,
-                backgroundColor: '#34495e',
-                borderRadius: 2
+                backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                hoverBackgroundColor: 'rgba(99, 102, 241, 0.9)',
+                borderRadius: 4
             }]
         },
         options: {
@@ -257,7 +270,7 @@ async function renderCameraVolumeChart() {
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                x: { ticks: { font: { size: 8 } }, grid: { display: false } },
+                x: { ticks: { font: { size: 8 }, color: '#64748b' }, grid: { display: false } },
                 y: { display: false, grid: { display: false } }
             }
         }
@@ -284,12 +297,13 @@ function renderCameraChart(data) {
             datasets: datasets.map((ds, idx) => ({
                 label: ds.camera_id,
                 data: ds.data,
-                borderColor: idx === 0 ? '#1a1a1a' : '#4a4a4a',
+                borderColor: SF_CHART_COLORS[idx % SF_CHART_COLORS.length],
                 backgroundColor: 'transparent',
                 borderWidth: 2,
-                tension: 0.3,
-                pointRadius: 3,
-                pointHoverRadius: 5
+                tension: 0.4,
+                pointRadius: 2,
+                pointHoverRadius: 5,
+                pointBackgroundColor: SF_CHART_COLORS[idx % SF_CHART_COLORS.length]
             }))
         },
         options: {
@@ -327,8 +341,8 @@ async function loadPersons() {
 
     const html = persons.map(person => `
         <div class="gallery-item" onclick="viewPerson('${person.id}')">
-            <div class="gallery-img" style="background: var(--paper-cream); display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 3rem; color: var(--ink-gray);">👤</span>
+            <div class="gallery-img" style="background: var(--sf-bg-primary); display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 3rem; color: var(--sf-text-muted);">👤</span>
             </div>
             <div class="gallery-info">
                 <div class="gallery-title">${person.name || 'Unknown'}</div>
@@ -367,8 +381,8 @@ async function loadUnknowns() {
 
     const html = unknowns.map(unknown => `
         <div class="gallery-item">
-            <div class="gallery-img" style="background: var(--paper-cream); display: flex; align-items: center; justify-content: center;">
-                <span style="font-size: 3rem; color: var(--ink-gray);">❓</span>
+            <div class="gallery-img" style="background: var(--sf-bg-primary); display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 3rem; color: var(--sf-text-muted);">❓</span>
             </div>
             <div class="gallery-info">
                 <div class="gallery-title">Unknown</div>
@@ -422,7 +436,7 @@ async function generateReport() {
     if (!reportData.events || reportData.events.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="text-center" style="padding: 2rem; color: var(--ink-gray);">
+                <td colspan="6" class="text-center" style="padding: 2rem; color: var(--sf-text-muted);">
                     No events found in selected date range
                 </td>
             </tr>
@@ -578,6 +592,26 @@ function initWebSocket() {
 }
 
 // Camera Management
+
+// Camera type display labels
+const CAMERA_TYPE_LABELS = {
+    ip_webcam: 'IP Webcam',
+    rtsp: 'RTSP',
+    usb: 'USB',
+    file: 'File',
+    http: 'HTTP'
+};
+
+const CAMERA_TYPE_ICONS = {
+    ip_webcam: 'bi-phone',
+    rtsp: 'bi-camera-video',
+    usb: 'bi-usb-drive',
+    file: 'bi-file-play',
+    http: 'bi-globe'
+};
+
+let _currentViewCameraId = null;
+
 async function loadCameras() {
     const grid = document.getElementById('cameras-grid');
     const cameras = await API.get('/api/cameras');
@@ -587,29 +621,36 @@ async function loadCameras() {
         return;
     }
 
-    grid.innerHTML = cameras.map(camera => `
+    grid.innerHTML = cameras.map(camera => {
+        const typeLabel = CAMERA_TYPE_LABELS[camera.camera_type] || camera.camera_type || 'Unknown';
+        const typeIcon = CAMERA_TYPE_ICONS[camera.camera_type] || 'bi-camera-video';
+        return `
         <div class="card">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <h4>${camera.name}</h4>
-                <span class="badge ${camera.status === 'ONLINE' ? 'bg-success' : 'bg-secondary'}">
-                    ${camera.status}
+                <span class="badge ${camera.status === 'online' ? 'bg-success' : camera.status === 'error' ? 'bg-danger' : 'bg-secondary'}">
+                    ${camera.status.toUpperCase()}
                 </span>
             </div>
-            <p class="text-muted mb-2">${camera.camera_id}</p>
+            <p class="text-muted mb-1">${camera.camera_id}</p>
             <p class="small mb-2">
+                <span class="badge bg-dark"><i class="bi ${typeIcon}"></i> ${typeLabel}</span><br>
                 <strong>Location:</strong> ${camera.location || 'N/A'}<br>
                 <strong>Zone:</strong> ${camera.zone || 'N/A'}
             </p>
             <div class="btn-group btn-group-sm w-100">
-                <button class="btn btn-outline-primary" onclick="viewCameraStream('${camera.camera_id}', '${camera.stream_url}', '${camera.name}', '${camera.location}')">
-                    View Stream
+                <button class="btn btn-outline-primary" onclick="viewCameraStream('${camera.camera_id}', '${camera.stream_url}', '${camera.name}', '${camera.location || ''}', '${camera.camera_type || 'ip_webcam'}')">
+                    <i class="bi bi-eye"></i> View
+                </button>
+                <button class="btn btn-outline-info" onclick="testCameraConnection('${camera.camera_id}', this)">
+                    <i class="bi bi-wifi"></i> Test
                 </button>
                 <button class="btn btn-outline-secondary" onclick="editCamera('${camera.camera_id}')">
-                    Edit
+                    <i class="bi bi-pencil"></i> Edit
                 </button>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function showAddCameraModal() {
@@ -625,13 +666,16 @@ async function saveCamera() {
         return;
     }
 
+    const cameraType = document.getElementById('cameraType').value || null;
+
     const cameraData = {
         name: document.getElementById('cameraName').value,
         camera_id: document.getElementById('cameraId').value,
         stream_url: document.getElementById('streamUrl').value,
+        camera_type: cameraType,
         location: document.getElementById('cameraLocation').value,
         zone: document.getElementById('cameraZone').value,
-        metadata: {}
+        extra_metadata: {}
     };
 
     const result = await API.post('/api/cameras', cameraData);
@@ -645,16 +689,122 @@ async function saveCamera() {
     }
 }
 
-function viewCameraStream(cameraId, streamUrl, name, location) {
+// Camera type change handler — show/hide IP Webcam helper
+function onCameraTypeChange() {
+    const type = document.getElementById('cameraType').value;
+    const helper = document.getElementById('ipWebcamHelper');
+    const urlField = document.getElementById('streamUrl');
+    const helpText = document.getElementById('streamUrlHelp');
+
+    if (type === 'ip_webcam' || type === '') {
+        helper.style.display = 'block';
+        urlField.placeholder = 'http://192.168.1.100:8080/video';
+        helpText.innerHTML = 'IP Webcam Pro: <code>http://[IP]:8080/video</code> (MJPEG) or <code>http://[IP]:8080/videofeed</code>';
+    } else if (type === 'rtsp') {
+        helper.style.display = 'none';
+        urlField.placeholder = 'rtsp://192.168.1.100:554/stream';
+        helpText.textContent = 'RTSP stream URL from your IP camera / NVR';
+    } else if (type === 'usb') {
+        helper.style.display = 'none';
+        urlField.placeholder = '0';
+        helpText.textContent = 'Device index (0 = default webcam, 1 = second camera, etc.)';
+    } else if (type === 'file') {
+        helper.style.display = 'none';
+        urlField.placeholder = 'C:\\Videos\\test_footage.mp4';
+        helpText.textContent = 'Path to a video file for testing';
+    } else {
+        helper.style.display = 'none';
+        urlField.placeholder = 'http://camera-host/stream';
+        helpText.textContent = 'Generic HTTP MJPEG stream URL';
+    }
+}
+
+// IP Webcam quick setup
+function fillIPWebcamUrl() {
+    const ip = document.getElementById('ipWebcamIP').value.trim();
+    if (!ip) {
+        showToast('Enter the IP address first', 'warning');
+        return;
+    }
+    document.getElementById('streamUrl').value = `http://${ip}:8080/video`;
+}
+
+// Test camera connection
+async function testCameraConnection(cameraId, btn) {
+    const origHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+    btn.disabled = true;
+
+    const result = await API.post(`/api/cameras/${cameraId}/test`, {});
+
+    btn.disabled = false;
+    if (result && result.status === 'online') {
+        btn.innerHTML = '<i class="bi bi-check-circle"></i> Online';
+        btn.classList.remove('btn-outline-info');
+        btn.classList.add('btn-outline-success');
+        showToast(`${cameraId}: Online (${result.latency_ms}ms, ${result.resolution})`, 'success');
+    } else {
+        btn.innerHTML = '<i class="bi bi-x-circle"></i> Failed';
+        btn.classList.remove('btn-outline-info');
+        btn.classList.add('btn-outline-danger');
+        showToast(`${cameraId}: ${result ? result.detail : 'Connection failed'}`, 'error');
+    }
+
+    setTimeout(() => {
+        btn.innerHTML = origHtml;
+        btn.className = btn.className.replace('btn-outline-success', 'btn-outline-info').replace('btn-outline-danger', 'btn-outline-info');
+    }, 3000);
+}
+
+// Test from view modal
+async function testCameraFromModal() {
+    if (!_currentViewCameraId) return;
+    const btn = document.getElementById('testConnectionBtn');
+    const container = document.getElementById('testResultContainer');
+    const alert = document.getElementById('testResultAlert');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+
+    const result = await API.post(`/api/cameras/${_currentViewCameraId}/test`, {});
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-wifi"></i> Test Connection';
+    container.style.display = 'block';
+
+    if (result && result.status === 'online') {
+        alert.className = 'alert alert-success py-2 small';
+        alert.innerHTML = `<i class="bi bi-check-circle"></i> <strong>Online</strong> — ${result.resolution}, ${result.latency_ms}ms latency`;
+        document.getElementById('cameraStreamStatus').textContent = 'Online';
+    } else {
+        alert.className = 'alert alert-danger py-2 small';
+        alert.innerHTML = `<i class="bi bi-x-circle"></i> <strong>Failed</strong> — ${result ? result.detail : 'No response'}`;
+        document.getElementById('cameraStreamStatus').textContent = 'Error';
+    }
+}
+
+function viewCameraStream(cameraId, streamUrl, name, location, cameraType) {
+    _currentViewCameraId = cameraId;
     const modal = new bootstrap.Modal(document.getElementById('viewCameraModal'));
     document.getElementById('viewCameraTitle').textContent = name;
     document.getElementById('cameraStreamLocation').textContent = location || 'N/A';
-    
-    // Set stream URL
+    document.getElementById('cameraStreamType').textContent = CAMERA_TYPE_LABELS[cameraType] || cameraType || 'Unknown';
+
+    // Hide previous test results
+    document.getElementById('testResultContainer').style.display = 'none';
+
     const img = document.getElementById('cameraStreamImg');
-    img.src = streamUrl;
+
+    // For USB and file-based sources, use the snapshot API endpoint instead
+    if (cameraType === 'usb' || cameraType === 'file') {
+        img.src = `${API_BASE_URL}/api/cameras/${cameraId}/snapshot?t=${Date.now()}`;
+    } else {
+        // Direct MJPEG stream (browser-native for IP Webcam, HTTP)
+        img.src = streamUrl;
+    }
+
     img.onerror = () => {
-        img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect fill="%23ddd" width="640" height="480"/><text x="50%" y="50%" text-anchor="middle" fill="%23666">Stream Unavailable</text></svg>';
+        img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect fill="%231e293b" width="640" height="480" rx="8"/><text x="50%" y="45%" text-anchor="middle" fill="%2364748b" font-family="Inter,sans-serif" font-size="18">Stream Unavailable</text><text x="50%" y="55%" text-anchor="middle" fill="%23475569" font-family="Inter,sans-serif" font-size="13">Click "Test Connection" to diagnose</text></svg>';
         document.getElementById('cameraStreamStatus').textContent = 'Offline';
     };
     img.onload = () => {
