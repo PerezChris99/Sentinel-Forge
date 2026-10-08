@@ -2,7 +2,7 @@
 
 import pytest
 
-from api.auth import create_access_token
+from api.auth import create_access_token, SECRET_KEY
 from api.websocket import connect, disconnect, socket_users, user_rooms
 
 
@@ -17,7 +17,7 @@ async def test_production_rejects_unauthenticated_socket(monkeypatch):
 @pytest.mark.asyncio
 async def test_production_accepts_valid_socket_token(monkeypatch):
     monkeypatch.setenv("SENTINELFORGE_ENV", "production")
-    monkeypatch.setenv("SECRET_KEY", "s" * 64)
+    monkeypatch.setenv("SECRET_KEY", SECRET_KEY)
     token = create_access_token({"sub": "user-1", "role": "viewer"})
     result = await connect("sid-auth", {}, {"token": token})
     assert result is None
