@@ -9,6 +9,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Request
 
 from db.models import User, UserRole
 from api.runtime import load_config
@@ -19,6 +20,7 @@ SECRET_KEY = CONFIG.secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = CONFIG.token_expire_minutes
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 # Password hashing — use bcrypt directly (passlib has compat issues with bcrypt 4.1+/Python 3.13)
 import bcrypt as _bcrypt
@@ -117,6 +119,28 @@ def require_role(required_role: UserRole):
     return role_checker
 
 
+
+async def require_operator_or_ingest(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+) -> dict:
+    """Authorize trusted machine ingestion or an operator/admin JWT."""
+    config = load_config()
+    supplied = request.headers.get("X-Ingest-Key", "")
+    if config.is_production and supplied and config.ingest_api_key:
+        if secrets.compare_digest(supplied, config.ingest_api_key):
+            return {"id": "ingest", "username": "ingest", "role": "operator", "auth_type": "ingest_key"}
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await get_current_user(credentials)
+    if user.get("role") not in {"operator", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
 # Export
 __all__ = [
     'verify_password',
@@ -124,5 +148,6 @@ __all__ = [
     'create_access_token',
     'decode_token',
     'get_current_user',
-    'require_role'
+    'require_role',
+    'require_operator_or_ingest'
 ]
