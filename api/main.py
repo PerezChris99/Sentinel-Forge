@@ -220,8 +220,12 @@ async def get_db():
 # Include extended API router
 from api.extended import router as extended_router
 import api.extended as extended_module
-extended_module._real_get_db = get_db  # Inject the real DB dependency
+from api.privacy import router as privacy_router
+import api.privacy as privacy_module
+extended_module._real_get_db = get_db
+privacy_module._real_get_db = get_db
 app.include_router(extended_router, prefix="/api")
+app.include_router(privacy_router, prefix="/api")
 
 # Mount Dashboard
 BASE_DIR = Path(__file__).resolve().parent.parent
