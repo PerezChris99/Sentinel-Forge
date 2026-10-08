@@ -13,6 +13,10 @@ def _routes():
     from api.main import fastapi_app
     return [route for route in fastapi_app.routes if isinstance(route, APIRoute)]
 
+def _openapi_paths():
+    from api.main import fastapi_app
+    return fastapi_app.openapi()["paths"]
+
 
 def test_no_duplicate_api_route_methods():
     seen = set()
@@ -52,10 +56,12 @@ def test_dashboard_persons_endpoint_is_single_authoritative_route():
     ],
 )
 def test_sensitive_api_routes_require_authentication(path):
-    route = next((r for r in _routes() if r.path.rstrip("/") == path.rstrip("/") or r.path.startswith(path.rstrip("/") + "/{")), None)
-    assert route is not None, f"route missing: {path}"
-    source = inspect.getsource(route.endpoint)
-    assert "Depends(get_current_user)" in source or "Depends(require_role" in source or "Depends(require_operator_or_ingest)" in source
+    paths = _openapi_paths()
+    route_path = next((candidate for candidate in paths if candidate.rstrip("/") == path.rstrip("/") or candidate.startswith(path.rstrip("/") + "/{")), None)
+    assert route_path is not None, f"route missing: {path}"
+    get_spec = paths[route_path].get("get") or paths[route_path].get("post")
+    assert get_spec is not None
+    assert get_spec.get("security"), f"route is not protected: {path}"
 
 
 def test_jwt_contains_and_validates_issuer_and_audience():
