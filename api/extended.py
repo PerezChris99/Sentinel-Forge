@@ -781,7 +781,8 @@ async def list_alerts(
     db: AsyncSession = Depends(get_db),
     status: Optional[AlertStatus] = None,
     severity: Optional[int] = None,
-    limit: int = Query(100, ge=1, le=500)
+    limit: int = Query(100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
 ):
     """List alerts with optional filtering"""
     query = select(Alert).order_by(Alert.created_at.desc())
@@ -928,7 +929,8 @@ async def create_incident(
 async def list_incidents(
     db: AsyncSession = Depends(get_db),
     status: Optional[IncidentStatus] = None,
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
+    user: dict = Depends(get_current_user),
 ):
     """List incidents"""
     query = select(Incident).order_by(Incident.created_at.desc())
@@ -1245,6 +1247,7 @@ async def list_detections(
     object_class: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0, le=100_000),
+    user: dict = Depends(get_current_user),
 ):
     """List recent detected objects with optional filters."""
     query = select(DetectedObject).order_by(DetectedObject.last_seen.desc())
