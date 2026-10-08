@@ -105,7 +105,17 @@ async def register(request: Request, user_data: UserRegister, db: AsyncSession =
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="user_registered",
+        resource_type="user",
+        resource_id=str(user.id),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    ))
+    await db.commit()
+
     # Create token
     access_token = create_access_token(data={"sub": str(user.id), "username": user.username, "role": user.role.value})
     
@@ -144,6 +154,14 @@ async def login(request: Request, credentials: UserLogin, db: AsyncSession = Dep
     
     # Update last login
     user.last_login = datetime.utcnow()
+    db.add(AuditLog(
+        user_id=user.id,
+        action="user_login",
+        resource_type="user",
+        resource_id=str(user.id),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    ))
     await db.commit()
     
     # Create token
