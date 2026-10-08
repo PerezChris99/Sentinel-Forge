@@ -10,8 +10,8 @@ from db.models import UserRole
 
 
 def _routes():
-    from api.main import app
-    return [route for route in app.routes if isinstance(route, APIRoute)]
+    from api.main import fastapi_app
+    return [route for route in fastapi_app.routes if isinstance(route, APIRoute)]
 
 
 def test_no_duplicate_api_route_methods():
