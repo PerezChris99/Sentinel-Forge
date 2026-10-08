@@ -129,7 +129,7 @@ class TestAnalyticsEngine:
         embeddings = np.vstack([cluster1, cluster2, cluster3, noise])
 
         engine = AnalyticsEngine(
-            clustering_eps=1.0,
+            clustering_eps=0.1,
             clustering_min_samples=5,
             use_pca=False
         )
