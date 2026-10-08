@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 import base64
+import hmac
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Request
 from pydantic import BaseModel, Field, EmailStr
@@ -59,7 +61,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     full_name: Optional[str] = None
-    role: UserRole = UserRole.VIEWER
+    # Public registration can never select an elevated role. Admin bootstrap is separate.
 
 
 class UserLogin(BaseModel):
@@ -97,7 +99,7 @@ async def register(request: Request, user_data: UserRegister, db: AsyncSession =
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         full_name=user_data.full_name,
-        role=user_data.role,
+        role=UserRole.VIEWER,
         is_active=True,
         created_at=datetime.utcnow()
     )
@@ -129,6 +131,43 @@ async def register(request: Request, user_data: UserRegister, db: AsyncSession =
             "role": user.role.value
         }
     }
+
+
+@router.post("/auth/bootstrap-admin", response_model=TokenResponse, tags=["Authentication"])
+@limiter.limit("3/minute")
+async def bootstrap_admin(request: Request, user_data: UserRegister, db: AsyncSession = Depends(get_db)):
+    """Create the first administrator using a one-time deployment secret."""
+    supplied = request.headers.get("X-Bootstrap-Token", "")
+    expected = os.getenv("BOOTSTRAP_ADMIN_TOKEN", "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bootstrap token")
+
+    existing = await db.scalar(select(func.count(User.id)))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Administrator bootstrap is already closed")
+
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        password_hash=get_password_hash(user_data.password),
+        full_name=user_data.full_name,
+        role=UserRole.ADMIN,
+        is_active=True,
+        created_at=datetime.utcnow(),
+    )
+    db.add(user)
+    await db.flush()
+    db.add(AuditLog(
+        user_id=user.id,
+        action="admin_bootstrap",
+        resource_type="user",
+        resource_id=str(user.id),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    ))
+    await db.commit()
+    token = create_access_token(data={"sub": str(user.id), "username": user.username, "role": user.role.value})
+    return {"access_token": token, "token_type": "bearer", "user": {"id": str(user.id), "username": user.username, "email": user.email, "role": user.role.value}}
 
 
 @router.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
