@@ -264,7 +264,7 @@ class AnalyticsEngine:
 
         # Pattern 2: Unusual hours (nighttime activity)
         recent_df["hour"] = pd.to_datetime(recent_df["timestamp"]).dt.hour
-        night_activity = recent_df[recent_df["hour"].between(22, 6)]
+        night_activity = recent_df[(recent_df["hour"] >= 22) | (recent_df["hour"] <= 6)]
 
         night_persons = night_activity.groupby("person_id").size().reset_index(name="night_count")
         for _, row in night_persons.iterrows():
