@@ -2,7 +2,6 @@
 Database models for SentinelForge.
 Supports PostgreSQL (with TimescaleDB/pgvector) and SQLite (dev mode).
 """
-import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
