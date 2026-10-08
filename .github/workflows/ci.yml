@@ -42,7 +42,7 @@ jobs:
         run: python -m compileall -q api analytics dashboard db detection
 
       - name: Validate Compose configuration
-        run: docker compose config -q
+        run: touch .env && docker compose config -q
 
   lint:
     name: Static quality checks
