@@ -41,6 +41,9 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q api analytics dashboard db detection
 
+      - name: Validate Compose configuration
+        run: docker compose config -q
+
   lint:
     name: Static quality checks
     runs-on: ubuntu-latest
