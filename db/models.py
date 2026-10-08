@@ -2,7 +2,6 @@
 Database models for SentinelForge.
 Supports PostgreSQL (with TimescaleDB/pgvector) and SQLite (dev mode).
 """
-import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
@@ -12,47 +11,67 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
 
-# --- Portable UUID type (works on both PostgreSQL and SQLite) ---
-_DB_URL = os.getenv("DB_URL", "")
-_USE_PG = "postgresql" in _DB_URL
-
+# --- Portable UUID and vector types -----------------------------------------
 
 class PortableUUID(TypeDecorator):
-    """Platform-agnostic UUID column: native UUID on PostgreSQL, CHAR(36) on SQLite."""
+    """Platform-agnostic UUID: native UUID on PostgreSQL, CHAR(36) elsewhere."""
     impl = String(36)
     cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            return str(value)
-        return value
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            import uuid as _uuid
-            return _uuid.UUID(value) if not isinstance(value, _uuid.UUID) else value
-        return value
 
     def load_dialect_impl(self, dialect):
         if dialect.name == "postgresql":
             from sqlalchemy.dialects.postgresql import UUID as PGUUID
-            return dialect.type_descriptor(PortableUUID())
+            return dialect.type_descriptor(PGUUID(as_uuid=True))
         return dialect.type_descriptor(String(36))
 
+    def process_bind_param(self, value, dialect):
+        return str(value) if value is not None else None
 
-# --- Portable Vector type (pgvector on Postgres, JSON on SQLite) ---
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return value if isinstance(value, UUID) else UUID(str(value))
+
+
 try:
     from pgvector.sqlalchemy import Vector as _PGVector
-    _has_pgvector = True
 except ImportError:
-    _has_pgvector = False
+    _PGVector = None
+
+
+class PortableVector(TypeDecorator):
+    """pgvector on PostgreSQL; JSON text on SQLite/development databases."""
+    impl = Text
+    cache_ok = True
+
+    def __init__(self, dimensions: int):
+        self.dimensions = dimensions
+        super().__init__()
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql" and _PGVector is not None:
+            return dialect.type_descriptor(_PGVector(self.dimensions))
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "postgresql":
+            return value
+        import json
+        return json.dumps(list(value))
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "postgresql":
+            return value
+        import json
+        return json.loads(value) if isinstance(value, str) else value
 
 
 def VectorColumn(dim: int):
-    """Return a Vector column on PostgreSQL or a Text column as fallback."""
-    if _has_pgvector and _USE_PG:
-        return Column(_PGVector(dim))
-    return Column(Text)  # Store as JSON string in SQLite
+    return Column(PortableVector(dim))
 
 
 Base = declarative_base()

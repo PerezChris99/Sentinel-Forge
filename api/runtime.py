@@ -16,6 +16,7 @@ class RuntimeConfig:
     db_url: str
     redis_url: str
     token_expire_minutes: int
+    ingest_api_key: str
 
     @property
     def is_production(self) -> bool:
@@ -35,6 +36,7 @@ def load_config() -> RuntimeConfig:
     raw_origins = os.getenv("CORS_ORIGINS", "*")
     origins = tuple(o.strip() for o in raw_origins.split(",") if o.strip()) or ("*",)
     token_expire_minutes = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))
+    ingest_api_key = os.getenv("INGEST_API_KEY", "")
 
     if environment in {"production", "prod"}:
         if not secret_key or len(secret_key) < 32:
@@ -43,6 +45,8 @@ def load_config() -> RuntimeConfig:
             raise RuntimeError("FERNET_KEY must be set in production; generated keys are not persistent")
         if origins == ("*",):
             raise RuntimeError("CORS_ORIGINS must explicitly list trusted origins in production")
+        if not ingest_api_key or len(ingest_api_key) < 32:
+            raise RuntimeError("INGEST_API_KEY must be set to at least 32 characters in production")
     else:
         secret_key = secret_key or "development-only-change-me-" + secrets.token_hex(16)
         fernet_key = fernet_key or ""
@@ -55,4 +59,5 @@ def load_config() -> RuntimeConfig:
         db_url=db_url,
         redis_url=redis_url,
         token_expire_minutes=token_expire_minutes,
+        ingest_api_key=ingest_api_key,
     )

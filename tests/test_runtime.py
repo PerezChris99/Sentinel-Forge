@@ -27,3 +27,13 @@ def test_production_rejects_wildcard_cors(monkeypatch):
     monkeypatch.setenv("CORS_ORIGINS", "*")
     with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
         load_config()
+
+
+def test_production_requires_ingest_credential(monkeypatch):
+    monkeypatch.setenv("SENTINELFORGE_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "x" * 64)
+    monkeypatch.setenv("FERNET_KEY", "x" * 44)
+    monkeypatch.setenv("CORS_ORIGINS", "https://console.example")
+    monkeypatch.delenv("INGEST_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="INGEST_API_KEY"):
+        load_config()
