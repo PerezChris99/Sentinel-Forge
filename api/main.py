@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from db.models import Base, Sighting, Person
+from db.models import Base, Sighting, Person, UserRole
 from api.runtime import load_config
 from api.audit import RequestAuditMiddleware
 
