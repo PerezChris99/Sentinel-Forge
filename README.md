@@ -361,6 +361,10 @@ These cannot be truthfully completed in source control alone:
 - [ ] OCR/model provider credentials.
 - [ ] Legal/compliance sign-off.
 
+## Operations
+
+See [docs/OPERATIONS.md](docs/OPERATIONS.md) for the production startup, backup/restore, camera reliability, security operations, scaling, and acceptance runbook.
+
 ## Engineering principle
 
 SentinelForge follows one rule:
