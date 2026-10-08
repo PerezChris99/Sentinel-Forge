@@ -20,7 +20,7 @@ target_metadata = Base.metadata
 # Override URL from environment if available
 db_url = os.getenv("DB_URL")
 if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+    # Application uses asyncpg; Alembic uses the synchronous psycopg2 driver.\n    config.set_main_option("sqlalchemy.url", db_url.replace("+asyncpg", ""))
 
 
 def run_migrations_offline() -> None:
