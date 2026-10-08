@@ -357,10 +357,18 @@ async def log_sighting(
     await db.commit()
     await db.refresh(sighting)
     
-    # Trigger webhook if flagged
+    # High-risk alerts are delivered asynchronously so ingestion latency does not
+    # depend on the external ALFIE service.
     if flag_level >= 2 and ALFIE_WEBHOOK_URL:
-        # TODO: Use Celery task for async webhook
-        pass
+        from api.tasks import send_alfie_webhook
+        send_alfie_webhook.delay({
+            "event": "high_risk_sighting",
+            "sighting_id": str(sighting.id),
+            "camera_id": sighting.camera_id,
+            "person_id": str(sighting.person_id) if sighting.person_id else None,
+            "flag_level": flag_level,
+            "timestamp": sighting.timestamp.isoformat(),
+        })
     
     return {"status": "logged", "sighting_id": str(sighting.id), "flag_level": flag_level}
 
