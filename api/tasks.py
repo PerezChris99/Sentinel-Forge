@@ -43,8 +43,8 @@ def purge_old_unknowns():
     return {"deleted": deleted}
 
 
-@celery_app.task(name="api.tasks.send_alfie_webhook", max_retries=3)
-def send_alfie_webhook(payload: dict):
+@celery_app.task(name="api.tasks.send_alfie_webhook", bind=True, max_retries=3)
+def send_alfie_webhook(self, payload: dict):
     """Send a signed webhook to ALFIE for high-risk alerts."""
     import requests
 
@@ -65,4 +65,4 @@ def send_alfie_webhook(payload: dict):
         response.raise_for_status()
         return {"status": "success", "http_status": response.status_code}
     except requests.RequestException as exc:
-        raise send_alfie_webhook.retry(exc=exc, countdown=30)
+        raise self.retry(exc=exc, countdown=30)
