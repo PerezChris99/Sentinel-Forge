@@ -118,9 +118,12 @@ class TestAnalyticsEngine:
         np.random.seed(42)
         
         # Create 3 clusters + noise
-        cluster1 = np.random.randn(20, 128) + [1, 0] * 64
-        cluster2 = np.random.randn(20, 128) + [0, 1] * 64
-        cluster3 = np.random.randn(20, 128) + [-1, -1] * 64
+        base1 = np.tile([1.0, 0.0], 64)
+        base2 = np.tile([0.0, 1.0], 64)
+        base3 = np.tile([-1.0, -1.0], 64)
+        cluster1 = base1 + np.random.randn(20, 128) * 0.02
+        cluster2 = base2 + np.random.randn(20, 128) * 0.02
+        cluster3 = base3 + np.random.randn(20, 128) * 0.02
         noise = np.random.randn(5, 128) * 5
         
         embeddings = np.vstack([cluster1, cluster2, cluster3, noise])
@@ -195,7 +198,7 @@ class TestAnalyticsEngine:
                 "confidence": 0.9,
                 "flag_level": 0
             }
-            for i in range(5)  # 5 nighttime sightings
+            for i in range(10)  # enough observations for the analytics minimum
         ])
 
         engine = AnalyticsEngine()
