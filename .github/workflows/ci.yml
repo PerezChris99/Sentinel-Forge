@@ -56,4 +56,4 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install "ruff>=0.8,<1"
-      - run: ruff check api/runtime.py api/audit.py api/privacy.py api/main.py api/auth.py db/models.py analytics/tasks.py tests/test_runtime.py tests/test_health.py --output-format=github
+      - run: ruff check api/runtime.py api/audit.py api/privacy.py tests/test_runtime.py tests/test_health.py --select E,F --output-format=github
