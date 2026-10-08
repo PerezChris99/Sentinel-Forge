@@ -1,4 +1,4 @@
-"""
+import pytest\n\npytest.importorskip("cv2")\npytest.importorskip("face_recognition")\n\n"""
 Unit tests for DetectionPipeline in detection/engine.py.
 These tests mock the face detection step to avoid heavy CV dependencies.
 """
