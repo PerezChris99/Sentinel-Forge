@@ -59,4 +59,4 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install "ruff>=0.8,<1"
-      - run: ruff check api api/analytics dashboard db detection tests --select E,F --output-format=github
+      - run: ruff check api analytics dashboard db detection tests --select E,F --output-format=github
