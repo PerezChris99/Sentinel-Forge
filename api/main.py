@@ -470,7 +470,7 @@ async def get_recent_sightings(limit: int = Query(10, ge=1, le=100), db: AsyncSe
 
 
 @app.get("/api/alerts/recent")
-async def get_recent_alerts(limit: int = Query(20, ge=1, le=100), db: AsyncSession = Depends(get_db)):
+async def get_recent_alerts(limit: int = Query(20, ge=1, le=100), db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get recent flagged events as alerts."""
     from sqlalchemy import select
     
