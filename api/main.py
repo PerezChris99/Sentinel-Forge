@@ -3,7 +3,6 @@ FastAPI main application for SentinelForge.
 Phase 3: Logging & Storage Layer with security, privacy, and ALFIE integration.
 """
 import asyncio
-import base64
 import hashlib
 import hmac
 import os
@@ -21,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
