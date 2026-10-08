@@ -11,7 +11,7 @@ from pathlib import Path
 
 import redis.asyncio as redis
 from cryptography.fernet import Fernet
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
@@ -100,7 +100,7 @@ class SightingEvent(BaseModel):
     embedding: List[float] = Field(..., min_length=128, max_length=128)
     cropped_b64: str
     flag_level: int = Field(0, ge=0, le=3)
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
 
 
 class PersonResponse(BaseModel):
@@ -282,6 +282,8 @@ async def readiness_check(db: AsyncSession = Depends(get_db)):
         await db.execute(text("SELECT 1"))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Database not ready: {exc}")
+    if CONFIG.is_production and redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis not ready")
     return {"status": "ready", "database": "ok", "redis": redis_client is not None}
 
 
@@ -353,34 +355,6 @@ async def log_sighting(
         pass
     
     return {"status": "logged", "sighting_id": str(sighting.id), "flag_level": flag_level}
-
-
-@app.get("/api/persons", response_model=List[PersonResponse])
-async def get_persons(
-    status: Optional[str] = "known",
-    db: AsyncSession = Depends(get_db),
-):
-    """Fetch persons list (known or unknown)."""
-    from sqlalchemy import select
-    
-    query = select(Person)
-    if status == "known":
-        query = query.where(Person.known_status == True)
-    
-    result = await db.execute(query)
-    persons = result.scalars().all()
-    
-    return [
-        PersonResponse(
-            id=str(p.id),
-            name=p.name,
-            role=p.role,
-            known_status=p.known_status,
-            consent_given=p.consent_given,
-            last_seen=None,  # TODO: Query last sighting
-        )
-        for p in persons
-    ]
 
 
 @app.post("/api/alfie/receive_query")
@@ -470,7 +444,7 @@ async def get_kpi_stats(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/sightings/recent")
-async def get_recent_sightings(limit: int = 10, db: AsyncSession = Depends(get_db)):
+async def get_recent_sightings(limit: int = Query(10, ge=1, le=100), db: AsyncSession = Depends(get_db)):
     """Get recent sightings with person information."""
     from sqlalchemy import select
     
@@ -493,6 +467,7 @@ async def get_recent_sightings(limit: int = 10, db: AsyncSession = Depends(get_d
         
         response.append({
             "id": str(s.id),
+            "person_id": str(s.person_id) if s.person_id else None,
             "person_name": person_name,
             "camera_id": s.camera_id,
             "flag_level": s.flag_level,
@@ -504,7 +479,7 @@ async def get_recent_sightings(limit: int = 10, db: AsyncSession = Depends(get_d
 
 
 @app.get("/api/alerts/recent")
-async def get_recent_alerts(limit: int = 20, db: AsyncSession = Depends(get_db)):
+async def get_recent_alerts(limit: int = Query(20, ge=1, le=100), db: AsyncSession = Depends(get_db)):
     """Get recent flagged events as alerts."""
     from sqlalchemy import select
     
@@ -544,51 +519,45 @@ async def get_recent_alerts(limit: int = 20, db: AsyncSession = Depends(get_db))
 
 
 @app.get("/api/stats/camera_activity")
-async def get_camera_activity(hours: int = 24, db: AsyncSession = Depends(get_db)):
+async def get_camera_activity(hours: int = Query(24, ge=1, le=168), db: AsyncSession = Depends(get_db)):
     """Get camera activity data for chart visualization."""
     from sqlalchemy import select, func
     
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     
-    # Simple hourly aggregation
-    query = (
-        select(
-            func.date_trunc('hour', Sighting.timestamp).label('hour'),
-            Sighting.camera_id,
-            func.count(Sighting.id).label('count')
-        )
+    # Keep aggregation dialect-neutral so SQLite smoke tests and PostgreSQL production
+    # produce the same contract. The timestamp/camera pair is indexed in production.
+    rows = (await db.execute(
+        select(Sighting.timestamp, Sighting.camera_id)
         .where(Sighting.timestamp >= cutoff)
-        .group_by('hour', Sighting.camera_id)
-        .order_by('hour')
-    )
-    
-    result = await db.execute(query)
-    rows = result.all()
-    
-    # Format for Chart.js
-    cameras = {}
+        .order_by(Sighting.timestamp)
+    )).all()
+
+    bucketed: dict[tuple[str, str], int] = {}
     for row in rows:
-        cam_id = row.camera_id
-        if cam_id not in cameras:
-            cameras[cam_id] = []
-        cameras[cam_id].append({
-            "hour": row.hour.isoformat(),
-            "count": row.count
-        })
-    
-    # Generate labels (last 24 hours)
-    labels = []
-    for i in range(hours):
-        hour = datetime.utcnow() - timedelta(hours=hours-i)
-        labels.append(hour.strftime("%H:%M"))
-    
-    datasets = [
-        {
-            "camera_id": cam_id,
-            "data": [d["count"] for d in data]
-        }
-        for cam_id, data in cameras.items()
+        ts = row.timestamp
+        bucket = ts.replace(minute=0, second=0, microsecond=0)
+        key = (bucket.isoformat(), row.camera_id)
+        bucketed[key] = bucketed.get(key, 0) + 1
+
+    labels_dt = [
+        (datetime.utcnow().replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours - 1 - i))
+        for i in range(hours)
     ]
+    labels = [hour.strftime("%H:%M") for hour in labels_dt]
+    datasets = []
+    camera_ids = sorted({camera_id for _, camera_id in bucketed})
+    for camera_id in camera_ids:
+        datasets.append({
+            "camera_id": camera_id,
+            "data": [
+                sum(
+                    count for (bucket, cam), count in bucketed.items()
+                    if cam == camera_id and bucket == hour.isoformat()
+                )
+                for hour in labels_dt
+            ],
+        })
     
     return {
         "labels": labels,
@@ -665,7 +634,7 @@ async def get_persons_gallery(filter: str = "all", db: AsyncSession = Depends(ge
 
 
 @app.get("/api/unknowns")
-async def get_unknowns(days: int = 90, db: AsyncSession = Depends(get_db)):
+async def get_unknowns(days: int = Query(90, ge=1, le=3650), db: AsyncSession = Depends(get_db)):
     """Get unknown sightings from past N days."""
     from sqlalchemy import select
     

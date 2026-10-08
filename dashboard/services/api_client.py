@@ -75,17 +75,22 @@ class SentinelForgeAPI(BaseSentinelForgeAPI):
         return self._handle_response(response)
 
     def fetch_overview_stats(self) -> JsonDict:
-        return self._get("api/dashboard/overview")
+        return self._get("api/stats/overview")
 
     def fetch_persons(self) -> List[JsonDict]:
-        payload = self._get("api/persons", params={"status": "known"})
-        return payload.get("items", payload)
+        payload = self._get("api/persons", params={"include_archived": False})
+        if isinstance(payload, dict):
+            return payload.get("items", [])
+        return payload
 
     def fetch_person_timeline(self, person_id: Optional[str]) -> List[JsonDict]:
         if not person_id:
             return []
-        payload = self._get("api/sightings", params={"person_id": person_id, "range": "7d"})
-        return payload.get("items", payload)
+        # The backend exposes recent sightings as a bounded feed; filter by person locally
+        # only when the backend does not expose a dedicated timeline route.
+        payload = self._get("api/sightings/recent", params={"limit": 100})
+        items = payload.get("items", payload) if isinstance(payload, dict) else payload
+        return [item for item in items if item.get("person_id") == person_id or item.get("person_name") == person_id]
 
     def fetch_unknown_clusters(self, page: int = 1, flag_level: Optional[int] = None) -> JsonDict:
         params: Dict[str, Any] = {"page": page}
