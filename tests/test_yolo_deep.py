@@ -1,5 +1,7 @@
 """YOLO engine behavior tests using a deterministic fake model."""
 
+# CI execution marker: validates the consolidated Phase 14 head.
+
 import numpy as np
 
 import detection.yolo_engine as module
