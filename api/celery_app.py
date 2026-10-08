@@ -32,19 +32,19 @@ celery_app.conf.beat_schedule = {
     
     # Analytics tasks
     "detect-patterns-daily": {
-        "task": "analytics.tasks.detect_patterns_task",
+        "task": "analytics.detect_patterns",
         "schedule": crontab(hour=2, minute=30),  # Daily at 02:30 UTC
     },
     "train-anomaly-detector-weekly": {
-        "task": "analytics.tasks.train_anomaly_detector_task",
+        "task": "analytics.train_anomaly_detector",
         "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Sunday 03:00 UTC
     },
     "score-recent-sightings": {
-        "task": "analytics.tasks.score_recent_sightings_task",
+        "task": "analytics.score_recent_sightings",
         "schedule": timedelta(hours=6),  # Every 6 hours
     },
     "cluster-unknowns-daily": {
-        "task": "analytics.tasks.cluster_unknowns_task",
+        "task": "analytics.cluster_unknowns",
         "schedule": crontab(hour=4, minute=0),  # Daily at 04:00 UTC
     },
 }
