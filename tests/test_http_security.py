@@ -18,7 +18,7 @@ def test_sensitive_routes_reject_anonymous_clients():
     from api.main import app
 
     with TestClient(app) as client:
-        for path in ("/api/persons", "/api/cameras", "/api/alerts", "/api/detections", "/api/graph/stats"):
+        for path in ("/api/persons", "/api/cameras", "/api/alerts", "/api/alerts/recent", "/api/stats/overview", "/api/sightings/recent", "/api/unknowns", "/api/detections", "/api/graph/stats"):
             response = client.get(path)
             assert response.status_code == 401, path
 
