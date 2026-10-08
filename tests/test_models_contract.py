@@ -11,7 +11,7 @@ def test_all_tables_create_on_sqlite():
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     expected = {
-        "persons", "sightings", "patterns", "users", "cameras", "alerts",
+        "persons", "sightings", "patterns", "footage_refs", "users", "cameras", "alerts",
         "incidents", "incident_events", "audit_logs", "search_queries",
         "detected_objects", "tracks", "behavior_events", "vehicles",
         "zones", "entity_relationships",
