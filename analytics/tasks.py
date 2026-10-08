@@ -65,7 +65,7 @@ def detect_patterns_task(lookback_days: int = 30):
                     pattern_type=p["pattern_type"],
                     confidence=p["confidence"],
                     sighting_count=p["sighting_count"],
-                    metadata=p["metadata"],
+                    metadata_json=p["metadata"],
                     detected_at=datetime.utcnow()
                 )
                 session.add(pattern)
@@ -172,7 +172,7 @@ def score_recent_sightings_task(hours: int = 24):
                         pattern_type="anomaly",
                         confidence=float(score),
                         sighting_count=1,
-                        metadata={"anomaly_score": float(score), "sighting_id": str(sighting.id)},
+                        metadata_json={"anomaly_score": float(score), "sighting_id": str(sighting.id)},
                         detected_at=datetime.utcnow()
                     )
                     session.add(pattern)
@@ -232,7 +232,7 @@ def cluster_unknowns_task(days: int = 90):
                     pattern_type="unknown_cluster",
                     confidence=float(silhouette),
                     sighting_count=cluster_size,
-                    metadata={"cluster_id": int(cluster_id), "n_clusters": n_clusters},
+                    metadata_json={"cluster_id": int(cluster_id), "n_clusters": n_clusters},
                     detected_at=datetime.utcnow()
                 )
                 session.add(pattern)
