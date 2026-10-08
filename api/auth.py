@@ -3,39 +3,39 @@ Authentication and Authorization utilities
 JWT token handling, password hashing, RBAC
 """
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from db.models import User, UserRole
 
-# Configuration
+# Configuration — single source of truth for SECRET_KEY
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-super-secret-key")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "1440"))  # 24h default
 security = HTTPBearer()
 
+# Password hashing — use bcrypt directly (passlib has compat issues with bcrypt 4.1+/Python 3.13)
+import bcrypt as _bcrypt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    return _bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8") if isinstance(hashed_password, str) else hashed_password
+    )
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create JWT access token"""
+    """Create JWT access token with issuer and audience claims."""
     to_encode = data.copy()
     
     if expires_delta:
@@ -43,16 +43,23 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "iss": "sentinelforge",
+        "aud": "sentinelforge-api",
+    })
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
     return encoded_jwt
 
 
 def decode_token(token: str) -> dict:
-    """Decode and verify JWT token"""
+    """Decode and verify JWT token with issuer/audience validation."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM],
+            audience="sentinelforge-api", issuer="sentinelforge"
+        )
         return payload
     except JWTError:
         raise HTTPException(
