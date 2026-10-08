@@ -1,6 +1,7 @@
 """Direct CRUD-router smoke coverage using a deterministic async DB stub."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -55,6 +56,7 @@ class DB:
 
 
 USER = {"id": str(uuid4()), "username": "tester", "role": "admin"}
+USER_OBJ = SimpleNamespace(id=UUID(USER["id"]), username="tester", role="admin")
 
 
 @pytest.mark.asyncio
@@ -64,7 +66,7 @@ async def test_collection_read_endpoints_handle_empty_database():
     assert await extended.list_persons(db=db, user=USER) == []
     assert await extended.list_alerts(db=db, limit=100, user=USER) == []
     assert await extended.list_incidents(db=db, limit=50, user=USER) == []
-    assert await extended.search_all("anything", db=db, limit=50, user=USER) is not None
+    assert await extended.search_all("anything", db=db, limit=50, user=USER_OBJ) is not None
     assert await extended.list_detections(db=db, limit=100, offset=0, user=USER) == []
     assert await extended.list_tracks(db=db, limit=100, offset=0, user=USER) == []
     assert await extended.list_behavior_events(db=db, limit=100, offset=0, user=USER) == []
@@ -85,7 +87,8 @@ async def test_analytics_and_graph_empty_state_endpoints():
     assert exc.value.status_code == 404
     assert behavior is not None
     assert graph["total_relationships"] == 0
-    assert links == []
+    assert links["total_links"] == 0
+    assert links["incoming"] == [] and links["outgoing"] == []
 
 
 @pytest.mark.asyncio
