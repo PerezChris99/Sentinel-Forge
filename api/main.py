@@ -35,6 +35,7 @@ from api.websocket import attach_socketio
 CONFIG = load_config()
 SECRET_KEY = CONFIG.secret_key
 REDIS_URL = CONFIG.redis_url
+INGEST_API_KEY = CONFIG.ingest_api_key
 ALFIE_WEBHOOK_URL = os.getenv("ALFIE_WEBHOOK_URL", "")
 FERNET_KEY = CONFIG.fernet_key or Fernet.generate_key().decode()
 CORS_ORIGINS = ",".join(CONFIG.cors_origins)
@@ -242,6 +243,13 @@ attach_socketio(app)
 
 
 # Endpoints
+async def verify_ingest_key(request: Request) -> None:
+    if CONFIG.is_production:
+        supplied = request.headers.get("X-Ingest-Key", "")
+        if not supplied or not secrets.compare_digest(supplied, INGEST_API_KEY):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ingest credential")
+
+
 @app.get("/")
 async def root():
     return {"message": "SentinelForge API v0.1.0"}
