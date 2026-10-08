@@ -60,12 +60,12 @@ This document is the authoritative implementation roadmap. It separates reposito
 - Documented bootstrap and production security requirements.
 
 ## Phase 7 — Documentation and CI Stabilization
-**Status: In progress**
+**Status: Complete**
 
 - Replaced the stale README with an architecture-first engineering document.
 - Added Mermaid architecture, event-lifecycle, investigation, and intelligence-flow diagrams.
 - Corrected roadmap language so application completeness is not confused with deployed production readiness.
-- Stabilize CI until the complete application test gate is green.
+- Core CI is green on main: tests, compilation, Compose validation, and hardened-surface linting.
 
 ## Phase 8 — Environment and Observability
 **Status: Environment-dependent**
