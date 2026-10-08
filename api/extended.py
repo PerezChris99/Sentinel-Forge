@@ -1480,7 +1480,8 @@ async def list_behavior_events(
 @router.get("/behaviors/stats", tags=["Behaviors"])
 async def behavior_stats(
     db: AsyncSession = Depends(get_db),
-    hours: int = Query(24, ge=1, le=168),
+    hours: int = Query(24, ge=1, le=168),,
+    user: dict = Depends(get_current_user)
 ):
     """Return aggregated behavior event counts by type."""
     since = datetime.utcnow() - timedelta(hours=hours)
@@ -1587,7 +1588,8 @@ async def list_vehicles(
 async def search_vehicle_by_plate(
     plate: str,
     db: AsyncSession = Depends(get_db),
-    limit: int = Query(50, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=500),,
+    user: dict = Depends(get_current_user)
 ):
     """Search vehicles by partial plate number."""
     query = (
@@ -1767,7 +1769,8 @@ async def delete_zone(
 @router.get("/zones/{zone_id}/occupancy", tags=["Zones"])
 async def zone_occupancy(
     zone_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db),,
+    user: dict = Depends(get_current_user)
 ):
     """Get current track count in a zone (from active tracks)."""
     zone_result = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == zone_id))
@@ -1881,7 +1884,8 @@ async def get_entity_links(
     entity_id: str,
     db: AsyncSession = Depends(get_db),
     relation_type: Optional[str] = None,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=500),,
+    user: dict = Depends(get_current_user)
 ):
     """Get all relationships for a specific entity (both directions)."""
     outgoing_q = select(EntityRelationship).where(
