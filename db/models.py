@@ -140,14 +140,17 @@ class Pattern(Base):
     __tablename__ = "patterns"
 
     id = Column(PortableUUID(), primary_key=True, default=uuid4)
-    person_id = Column(PortableUUID(), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False)
-    date = Column(DateTime, nullable=False, index=True)
+    person_id = Column(PortableUUID(), ForeignKey("persons.id", ondelete="CASCADE"), nullable=True)
+    date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    pattern_type = Column(String(50))
+    confidence = Column(Float)
     sighting_count = Column(Integer, default=0)
-    avg_duration = Column(Float)  # Average duration in seconds
+    avg_duration = Column(Float)
     anomaly_score = Column(Float, default=0.0)
+    metadata_json = Column("metadata", JSON)
+    detected_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     person = relationship("Person", back_populates="patterns")
 
 
