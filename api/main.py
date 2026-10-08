@@ -32,7 +32,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from db.models import Base, Sighting, Person, UserRole
 from api.runtime import load_config
 from api.audit import RequestAuditMiddleware
-from api.auth import get_current_user
+from api.auth import get_current_user, require_role
 
 # Import extended router and websocket (will configure after app creation)
 from api.websocket import attach_socketio
@@ -108,6 +108,26 @@ class SightingEvent(BaseModel):
     cropped_b64: str = Field(..., min_length=1, max_length=10_000_000)
     flag_level: int = Field(0, ge=0, le=3)
     metadata: dict = Field(default_factory=dict)
+
+    @field_validator("person_id")
+    @classmethod
+    def validate_person_id(cls, value: Optional[str]) -> Optional[str]:
+        if value and not value.startswith("unknown"):
+            try:
+                UUID(value)
+            except ValueError as exc:
+                raise ValueError("person_id must be a UUID or an unknown-* identifier") from exc
+        return value
+
+    @field_validator("cropped_b64")
+    @classmethod
+    def validate_image_payload(cls, value: str) -> str:
+        encoded = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
+        try:
+            base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("cropped_b64 must contain valid base64 data") from exc
+        return value
 
 
 class PersonResponse(BaseModel):
