@@ -30,7 +30,7 @@ from db.models import (
 )
 from api.auth import (
     get_current_user, require_role, get_password_hash,
-    verify_password, create_access_token
+    verify_password, create_access_token, require_operator_or_ingest
 )
 
 
@@ -321,7 +321,8 @@ async def create_camera(
 @router.get("/cameras", tags=["Cameras"])
 async def list_cameras(
     db: AsyncSession = Depends(get_db),
-    enabled_only: bool = False
+    enabled_only: bool = False,
+    user: dict = Depends(get_current_user),
 ):
     """List all cameras"""
     query = select(Camera)
@@ -349,7 +350,7 @@ async def list_cameras(
 
 
 @router.get("/cameras/{camera_id}", tags=["Cameras"])
-async def get_camera(camera_id: str, db: AsyncSession = Depends(get_db)):
+async def get_camera(camera_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get camera details"""
     result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     camera = result.scalar_one_or_none()
@@ -580,7 +581,8 @@ async def create_person(
 async def list_persons(
     db: AsyncSession = Depends(get_db),
     include_archived: bool = False,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    user: dict = Depends(get_current_user),
 ):
     """List all persons"""
     query = select(Person)
@@ -615,7 +617,7 @@ async def list_persons(
 
 
 @router.get("/persons/{person_id}", tags=["Persons"])
-async def get_person(person_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_person(person_id: UUID, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get person details"""
     result = await db.execute(select(Person).where(Person.id == person_id))
     person = result.scalar_one_or_none()
@@ -948,7 +950,7 @@ async def list_incidents(
 
 
 @router.get("/incidents/{incident_id}", tags=["Incidents"])
-async def get_incident(incident_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_incident(incident_id: UUID, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get incident details with events"""
     result = await db.execute(select(Incident).where(Incident.id == incident_id))
     incident = result.scalar_one_or_none()
@@ -1203,7 +1205,8 @@ class TrackCreate(BaseModel):
 @router.post("/detections", tags=["Detections"])
 async def create_detection(
     data: DetectedObjectCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Log a detected object from the detection pipeline."""
     obj = DetectedObject(
@@ -1261,7 +1264,7 @@ async def list_detections(
 
 
 @router.get("/detections/{detection_id}", tags=["Detections"])
-async def get_detection(detection_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_detection(detection_id: UUID, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get a single detection by ID."""
     result = await db.execute(select(DetectedObject).where(DetectedObject.id == detection_id))
     obj = result.scalar_one_or_none()
@@ -1285,7 +1288,8 @@ async def get_detection(detection_id: UUID, db: AsyncSession = Depends(get_db)):
 @router.post("/tracks", tags=["Tracks"])
 async def create_track(
     data: TrackCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Create or register a new track."""
     # Check uniqueness
@@ -1346,7 +1350,7 @@ async def list_tracks(
 
 
 @router.get("/tracks/{track_label}", tags=["Tracks"])
-async def get_track(track_label: str, db: AsyncSession = Depends(get_db)):
+async def get_track(track_label: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get a track by its label."""
     result = await db.execute(select(Track).where(Track.track_label == track_label))
     track = result.scalar_one_or_none()
@@ -1396,7 +1400,8 @@ class BehaviorEventCreate(BaseModel):
 @router.post("/behaviors", tags=["Behaviors"])
 async def create_behavior_event(
     data: BehaviorEventCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Log a behavior analysis event."""
     record = BehaviorEventRecord(
@@ -1498,7 +1503,8 @@ class VehicleCreate(BaseModel):
 @router.post("/vehicles", tags=["Vehicles"])
 async def create_vehicle(
     data: VehicleCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Log a vehicle detection / LPR result."""
     vehicle = Vehicle(
@@ -1618,7 +1624,8 @@ class ZoneUpdate(BaseModel):
 @router.post("/zones", tags=["Zones"])
 async def create_zone(
     data: ZoneCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Create a geospatial zone."""
     existing = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == data.zone_id))
@@ -1683,7 +1690,7 @@ async def list_zones(
 
 
 @router.get("/zones/{zone_id}", tags=["Zones"])
-async def get_zone(zone_id: str, db: AsyncSession = Depends(get_db)):
+async def get_zone(zone_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get a zone by its ID."""
     result = await db.execute(select(ZoneRecord).where(ZoneRecord.zone_id == zone_id))
     zone = result.scalar_one_or_none()
@@ -1789,7 +1796,8 @@ class RelationshipCreate(BaseModel):
 @router.post("/graph/relationships", tags=["Knowledge Graph"])
 async def create_relationship(
     data: RelationshipCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_operator_or_ingest)
 ):
     """Create an entity relationship edge."""
     rel = EntityRelationship(
@@ -1904,7 +1912,7 @@ async def get_entity_links(
 
 
 @router.get("/graph/stats", tags=["Knowledge Graph"])
-async def graph_stats(db: AsyncSession = Depends(get_db)):
+async def graph_stats(db: AsyncSession = Depends(get_db), user: dict = Depends(get_current_user)):
     """Return knowledge graph statistics."""
     total = await db.execute(select(func.count(EntityRelationship.id)))
     total_count = total.scalar() or 0
