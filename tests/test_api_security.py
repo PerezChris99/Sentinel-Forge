@@ -1,7 +1,5 @@
 """Security and API contract regression tests."""
 
-import inspect
-
 import pytest
 from fastapi.routing import APIRoute
 
