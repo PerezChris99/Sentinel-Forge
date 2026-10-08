@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Set
 import socketio
 from fastapi import FastAPI
+from jose import JWTError, jwt
 import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ sio = socketio.AsyncServer(
 
 # Connected clients registry
 connected_clients: Set[str] = set()
-user_rooms: Dict[str, Set[str]] = {}  # user_id -> set of room names
+user_rooms: Dict[str, Set[str]] = {}  # user_id -> set of socket ids
+socket_users: Dict[str, str] = {}  # socket id -> authenticated user id
 
 
 class WebSocketManager:
@@ -83,14 +85,29 @@ class WebSocketManager:
 # Socket.IO event handlers
 @sio.event
 async def connect(sid, environ, auth):
-    """Handle client connection"""
+    """Authenticate Socket.IO clients before accepting the connection."""
+    environment = os.getenv("SENTINELFORGE_ENV", os.getenv("ENVIRONMENT", "development")).lower()
+    token = auth.get("token") if isinstance(auth, dict) else None
+    if not token:
+        header = environ.get("HTTP_AUTHORIZATION", "")
+        if header.lower().startswith("bearer "):
+            token = header[7:].strip()
+    user_id = None
+    secret = os.getenv("SECRET_KEY", "")
+    if token and secret:
+        try:
+            payload = jwt.decode(token, secret, algorithms=["HS256"], audience="sentinelforge-api", issuer="sentinelforge")
+            user_id = payload.get("sub")
+        except JWTError:
+            user_id = None
+    if environment in {"production", "prod"} and not user_id:
+        logger.warning("Rejected unauthenticated Socket.IO connection: %s", sid)
+        return False
     connected_clients.add(sid)
-    logger.info(f"Client connected: {sid}")
-    
-    # Send connection confirmation
-    await sio.emit('connection_established', {
-        'sid': sid,
-        'timestamp': str(datetime.utcnow().isoformat())
+    if user_id:
+        socket_users[sid] = str(user_id)
+    await sio.emit("connection_established", {
+        "sid": sid, "authenticated": bool(user_id), "timestamp": datetime.utcnow().isoformat()
     }, room=sid)
 
 
@@ -98,33 +115,32 @@ async def connect(sid, environ, auth):
 async def disconnect(sid):
     """Handle client disconnection"""
     connected_clients.discard(sid)
-    
-    # Remove from all rooms
-    for user_id, rooms in user_rooms.items():
+    authenticated_user = socket_users.pop(sid, None)
+    if authenticated_user and authenticated_user in user_rooms:
+        user_rooms[authenticated_user].discard(sid)
+        if not user_rooms[authenticated_user]:
+            user_rooms.pop(authenticated_user, None)
+    for rooms in user_rooms.values():
         rooms.discard(sid)
-    
-    logger.info(f"Client disconnected: {sid}")
+    logger.info("Client disconnected: %s", sid)
 
 
 @sio.event
 async def subscribe(sid, data):
     """Subscribe to specific events"""
-    channel = data.get('channel')
-    user_id = data.get('user_id')
-    
+    channel = data.get("channel")
+    requested_user = data.get("user_id")
+    authenticated_user = socket_users.get(sid)
+    if requested_user and requested_user != authenticated_user:
+        await sio.emit("error", {"detail": "Cannot subscribe to another user's room"}, room=sid)
+        return
+    user_id = authenticated_user
     if user_id:
-        if user_id not in user_rooms:
-            user_rooms[user_id] = set()
-        user_rooms[user_id].add(sid)
+        user_rooms.setdefault(user_id, set()).add(sid)
         sio.enter_room(sid, user_id)
-    
     if channel:
         sio.enter_room(sid, channel)
-    
-    await sio.emit('subscribed', {
-        'channel': channel,
-        'user_id': user_id
-    }, room=sid)
+    await sio.emit("subscribed", {"channel": channel, "user_id": user_id}, room=sid)
     
     logger.info(f"Client {sid} subscribed to channel: {channel}, user: {user_id}")
 
@@ -132,20 +148,14 @@ async def subscribe(sid, data):
 @sio.event
 async def unsubscribe(sid, data):
     """Unsubscribe from specific events"""
-    channel = data.get('channel')
-    user_id = data.get('user_id')
-    
+    channel = data.get("channel")
+    user_id = socket_users.get(sid)
     if channel:
         sio.leave_room(sid, channel)
-    
     if user_id and user_id in user_rooms:
         user_rooms[user_id].discard(sid)
         sio.leave_room(sid, user_id)
-    
-    await sio.emit('unsubscribed', {
-        'channel': channel,
-        'user_id': user_id
-    }, room=sid)
+    await sio.emit("unsubscribed", {"channel": channel, "user_id": user_id}, room=sid)
 
 
 @sio.event
@@ -158,7 +168,7 @@ async def ping(sid):
 async def acknowledge_alert(sid, data):
     """Handle alert acknowledgment from client"""
     alert_id = data.get('alert_id')
-    user_id = data.get('user_id')
+    user_id = socket_users.get(sid)
     
     # Broadcast acknowledgment to other users
     await sio.emit('alert_acknowledged', {
