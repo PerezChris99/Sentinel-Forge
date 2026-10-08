@@ -2,16 +2,14 @@
 Authentication and Authorization utilities
 JWT token handling, password hashing, RBAC
 """
-import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi import Request
 
-from db.models import User, UserRole
+from db.models import UserRole
 from api.runtime import load_config
 
 # Configuration — single source of truth for SECRET_KEY
@@ -22,7 +20,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = CONFIG.token_expire_minutes
 security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
 
-# Password hashing — use bcrypt directly (passlib has compat issues with bcrypt 4.1+/Python 3.13)
+# Password hashing — use bcrypt directly.
 import bcrypt as _bcrypt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
