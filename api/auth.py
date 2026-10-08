@@ -3,6 +3,7 @@ Authentication and Authorization utilities
 JWT token handling, password hashing, RBAC
 """
 import secrets
+import bcrypt as _bcrypt
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -21,7 +22,6 @@ security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
 
 # Password hashing — use bcrypt directly.
-import bcrypt as _bcrypt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
